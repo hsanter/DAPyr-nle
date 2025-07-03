@@ -2,6 +2,7 @@ import numpy as np
 import copy
 from . import MISC
 import warnings
+import functools
 
 #TODO Clean up and comment inside functions
 #TODO Make the inflation calls in a separate function
@@ -92,12 +93,13 @@ def EnSRF_update(xf : np.ndarray, hx : np.ndarray,
 
 
 def lpf_update(x : np.ndarray, hx : np.ndarray, 
-               Y : np.ndarray, var_y :float, 
+               Y : np.ndarray, 
                H : np.ndarray, C_pf : np.ndarray, 
                N_eff : float, gamma : float, 
                min_res : int, maxiter : int, 
                kddm_flag : int,  
-               e_flag : int, qcpass : np.ndarray):
+               e_flag : int, qcpass : np.ndarray,
+               L: functools.partial ):
     '''Performs a Local Particle Filter update based on Poterjoy et al. (2022).
     
     Parameters
@@ -186,10 +188,7 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
         lomega = np.zeros_like(omega)
         lomega_y = np.zeros_like(omega_y)
 
-        d = (Y - hxo)**2/(2*var_y)
-        d = d - np.min(d, axis = -1)[:, None]
-        wo = np.exp(-d) + 1E-40
-        #wo = np.exp(-d)
+        wo = L(Y, hxo) + 1E-40
         wo = wo/np.sum(wo, axis = -1)[:, None]
 
         if np.any(np.isnan(wo)):
@@ -198,7 +197,6 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
 
         beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y, beta_max)
         beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res, beta_max)
-        
         
         wo_ind = np.where(1 < 0.98*Ne*np.sum(wo**2, axis = -1))[0]
         #Obs loop
