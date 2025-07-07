@@ -127,7 +127,6 @@ class TestDA(unittest.TestCase):
             min_res = 0.0
             xa, e_flag = dap.DA.lpf_update(xf, xf, Y[:, None], H, C, N_eff*Ne, alpha, 
                                            min_res, maxiter, kddm_flag, e_flag, qcpass, L)
-            print('marker')
             self.assertTrue(np.allclose(xa_true, xa))
       @pytest.mark.filterwarnings("ignore:No observations")
       def test_LPF_qaqc(self):
