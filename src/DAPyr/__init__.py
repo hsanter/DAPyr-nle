@@ -306,7 +306,7 @@ class Expt:
 
             #Kernel Embeddings Likelihood Estimation Parameters
             # self.obsParams['do_keest'] = 0
-            self.obsParams['keest_type'] = 2
+            self.obsParams['nle_type'] = 2
             self.obsParams['Neig'] = 30
             self.obsParams['knn_frac'] = 0.05
             self.obsParams['bw_dm'] = 0.05
@@ -441,7 +441,10 @@ class Expt:
                   "      0: Linear (x)\n"
                   "      1: Quadratic (x^2)\n"
                   "      2: Lognormal (log(abs(x)))\n"
-                  f"sig_y: {self.obsParams['sig_y']} # Standard Deviation of observation error\n"
+                  f"used_obs_err: {self.obsParams['used_obs_err']} # todo \n"
+                  f"used_obs_err_params: {self.obsParams['used_obs_err_params']} #todo \n"
+                  f"prescribed_obs_err: {self.obsParams['prescribed_obs_err']} #todo \n"
+                  f"prescribed_obs_err_params: {self.obsParams['prescribed_obs_err_params']} #todo \n"
                   f"tau: {self.obsParams['tau']} # Number of model time steps between data assimilation cycles\n"
                   f"obb: {self.obsParams['obb']} # Observation buffer: number of variables to skip when generating obs\n"
                   f"obf: {self.obsParams['obf']} # Observation spatial frequency: spacing between variables\n"
@@ -479,7 +482,7 @@ class Expt:
                   # f"do_keest: {self.getParam('do_keest')} # determine whether to estimate nonparametric likelihoods\n"
                   # "      0: Off\n"
                   # "      1: On\n"
-                  f"keest_type: {self.getParam('keest_type')} # which flavor of KEEST to use.\n"
+                  f"nle_type: {self.getParam('nle_type')} # which flavor of KEEST to use.\n"
                   "      2: Estimating p(e|xt)\n"
                   "      3: Estimating p(e|xa)\n"
                   "      4: Estimating p(y|xt)\n"
@@ -973,8 +976,6 @@ def plot_pab(expt: Expt, ax = None):
 
       htp = []
 
-      
-
       for ind, j in enumerate(np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])):
             dum = np.abs(j - x_train[0, :])
             ind1 = np.argsort(dum)[0]
@@ -996,7 +997,7 @@ def plot_pab(expt: Expt, ax = None):
 
       ax.set_title(f'Conditional Likelihood Estimates for Experiment {expt.exptname}')
 
-      if expt.getParam('keest_type') < 4:
+      if expt.getParam('nle_type') < 4:
             ax.set_xlabel('$\epsilon$')
             ax.set_ylabel('$p(\epsilon | x)$')
       else:
@@ -1073,7 +1074,7 @@ def runDA(expt: Expt, maxT : int = None):
       prescribed_obs_err_params = expt.getParam('prescribed_obs_err_params')
 
       # Nonparametric Likelihood Estimation Parameters
-      keest_type = expt.getParam('keest_type')
+      nle_type = expt.getParam('nle_type')
       Neig = expt.getParam('Neig')
       knn_frac = expt.getParam('knn_frac')
       bw_dm = expt.getParam('bw_dm')
@@ -1238,18 +1239,22 @@ def runDA(expt: Expt, maxT : int = None):
                                     # 3: p(e|xa)
                                     # 4: p(y|xt)
                                     # 5: p(y|xa)
-                                    if keest_type == 2 or keest_type == 4:
+                                    if nle_type == 2 or nle_type == 4:
                                           x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
-                                    elif keest_type == 3 or keest_type == 5:
+                                    elif nle_type == 3 or nle_type == 5:
                                           x_train[:Ns,ts+s-1] = Htemp @ rng.choice(xa)
                                           
-                              if keest_type == 4 or keest_type == 5:
+                              if nle_type == 4 or nle_type == 5:
                                     y_train[ts:te] = Y[t,0::tof]
                               else:
                                     # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
+
+                              print('about to start rkhs likelihood')
+      
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+                              print('out of rkhs likelihood')
                               if save_keest_pab != 0:
                                     expt.keest_pab = pab
                                     expt.x_train = x_train
@@ -1280,12 +1285,12 @@ def runDA(expt: Expt, maxT : int = None):
                               wo = np.zeros((Ny, Ne))
 
                               for k in range(Ny):
-                                    if keest_type >= 4 :
+                                    if nle_type >= 4 :
                                           obs_emb = MISC.diff_map_ext_nystrom(y[:,i-1,k].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           obs_emb *= eval_y
                                           # ind2 = np.argmin(np.sum((Vyextra.T - Vyscaled.T) ** 2, axis=0))
                                     for n in range(Ne):
-                                          if keest_type < 4:
+                                          if nle_type < 4:
                                                 obs_emb = MISC.diff_map_ext_nystrom(
                                     # y_train[ts:te] = Y[t,0::tof]
                                                       (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
@@ -1318,7 +1323,9 @@ def runDA(expt: Expt, maxT : int = None):
 
                               # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
 
+                              print('about to keest update')
                               xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+                              print('out of keest update')
 
 
 
@@ -1335,7 +1342,7 @@ def runDA(expt: Expt, maxT : int = None):
                                           Htemp = Htemp.T
 
                                     # Use truth or random sample from posterior
-                                    if keest_type in [2, 4]:
+                                    if nle_type in [2, 4]:
                                           hxtemp[:, l - 1] = Htemp @ xt[:,t]
                                     else:
                                           dum = np.random.randint(0, Ne, size=1)
@@ -1353,7 +1360,7 @@ def runDA(expt: Expt, maxT : int = None):
                               for j in range(0, Ny, tof):
                                     l += 1
                                     x_train[:, ind[l - 1]] = hxtemp[:, l - 1]
-                                    if keest_type in [4,5]:
+                                    if nle_type in [4,5]:
                                           y_train[:Nl, ind[l - 1]] = Y[j, t,:]
                                     else:
                                           y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
@@ -1361,7 +1368,7 @@ def runDA(expt: Expt, maxT : int = None):
                         #        populate the next entries of x_train and y_train
                         #        do normal LPF (see case 1)
                         # else, 
-                        #        do estimation of p(whatever|whatever) (according to keest_type)
+                        #        do estimation of p(whatever|whatever) (according to nle_type)
                         #        do LPF with keest-estimated likelihoods
                         #        replace a random element of the training dataset with this cycle's sample
                         

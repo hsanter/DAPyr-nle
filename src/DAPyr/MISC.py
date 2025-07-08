@@ -7,6 +7,7 @@ from scipy.sparse.linalg import eigs, eigsh
 from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
 from scipy.stats import gaussian_kde
 from scipy.linalg import inv
+from scipy.io import loadmat
 
 import warnings
 
@@ -245,21 +246,23 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       # print(DO.sum(axis=1))
       DO = (DO.T).maximum(DO)  # Ensure symmetr
       DO = DO + 1e-10 * np.eye(n_keep)
-   
+
       # Eigen decomposition
       v0 = rng.uniform(0, 1, n_keep)
       try:
-          eig_vals, eig_vecs = eigsh(DO, k=Neig + 1, which="LM", v0=v0)
+          eig_vals, eig_vecs = eigsh(DO, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
       except apnc as e:
           eig_vals = e.eigenvalues
           eig_vecs = e.eigenvectors
           print(f'Only found {len(eig_vals)} out of {Neig + 1} eigenvectors')
+
    
       eig_vals = np.real(eig_vals)
       eig_vecs = np.real(eig_vecs)
    
       eig_vecs = (eig_vecs.T[np.argsort(eig_vals)][::-1]).T
       eig_vals = eig_vals[np.argsort(eig_vals)][::-1]
+
    
       # Filter eigenvalues
       valid_indices = np.where(eig_vals > eigmin)[0]
@@ -321,6 +324,7 @@ def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
 
 def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
 
+
       N = a.shape[0]
       a_cop = a.copy()
       b_cop = b.copy()
@@ -328,6 +332,13 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Get eigenvectors and eigenvalues of diffusion maps
       Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
       Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
+
+
+      a_signs = np.where(Va[0] < 0, -1, 1)
+      Va *= a_signs
+      b_signs = np.where(Vb[0] < 0, -1, 1)
+      Vb *= b_signs
+
       x_emb = (Vb * Db).T
       y_emb = (Va * Da).T
 
@@ -340,7 +351,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
 
       kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
       qa = kde(a_cop.T)
-      
+
       # Calculate kernel mean embeddings
       N, M1 = Va.shape
       N, M2 = Vb.shape
