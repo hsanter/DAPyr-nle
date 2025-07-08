@@ -264,6 +264,119 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
             break
     return x, e_flag
 
+def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray, 
+      Y : np.ndarray, 
+      H : np.ndarray, C_pf : np.ndarray, 
+      N_eff : float, wo: np.ndarray,
+      gamma : float, 
+      min_res : int,  
+      kddm_flag : int,  
+      e_flag : int):
+    
+      Nx, Ne = x.shape
+      HCH = np.matmul(C_pf, H.T)*(1 - 1e-5)
+
+      Ny = len(Y)
+
+      beta = np.ones((Nx,))
+      beta_y = np.ones((Ny,))
+      beta_max = 1e100
+      res = np.ones(beta.shape)
+      res_y = np.ones(beta_y.shape)
+      
+      res = res- min_res
+      res_y = res_y - min_res
+      
+      xo = x.copy()
+      hx = hx.squeeze()
+      hxo = copy.deepcopy(hx)
+      if len(hxo.shape) == 1:
+            hxo = hxo[None, :]
+      if len(hx.shape) == 1:
+            hx = hx[None, :]
+
+      omega = np.ones((Nx, Ne))*(1/Ne) #Nx x Ne
+      omega_y = np.ones((Ny, Ne))*(1/Ne)
+      lomega = np.zeros_like(omega)
+      lomega_y = np.zeros_like(omega_y)
+
+      print(e_flag)
+
+      
+      if np.any(np.isnan(wo)):
+            e_flag = 1
+            print('oh?')
+            return np.nan, e_flag
+
+      beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y, beta_max)
+      beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res, beta_max)
+      wo_ind = np.where(1 < 0.98*Ne*np.sum(wo**2, axis = -1))[0]
+
+      #Obs loop
+      for i in wo_ind:
+            beta_ind = np.where(beta != beta_max)[0]
+            wt = Ne*wo[i, :] - 1 #Ne Array
+            C = C_pf[i, beta_ind] #Nxb array
+            dum = np.zeros((len(beta_ind), Ne))
+            if np.any(C == 1.0):
+                  dum[C==1.0, :] = np.log(Ne*wo[i, :]) 
+            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1)
+            lomega[beta_ind, :] = lomega[beta_ind, :] - dum
+            lomega[beta_ind, :] = lomega[beta_ind, :] - np.min(lomega[beta_ind, :], axis = -1)[:, None]
+
+            beta_ind = np.where(beta_y != beta_max)[0]
+            wt = Ne*wo[i, :] - 1 #Ne Array
+            C = HCH[i, beta_ind] #Nxb array
+            dum = np.zeros((len(beta_ind), Ne))
+            if np.any(C == 1.0):
+                  dum[C==1.0, :] = np.log(Ne*wo[i, :]) 
+            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1)
+            lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - dum
+            lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - np.min(lomega_y[beta_ind, :], axis = -1)[:, None]
+
+            #Normalize
+            #lomega is Nx x Ne
+            #omega needs to be Nx x Ne
+
+            omega = np.exp(-lomega / beta[:, None])
+            omega_y =  np.exp(-lomega_y / beta_y[:, None])
+
+            omegas_y = np.sum(omega_y, axis = -1)[:, None] #Sum over Ensemble Members
+            omegas = np.sum(omega, axis = -1)[:, None]
+
+            omega = omega/omegas
+            xmpf = np.sum(omega*xo, axis = -1)[:, None]
+            omega_y = omega_y/ omegas_y
+            hxmpf =np.sum(omega_y*hxo, axis = -1)[:, None]
+
+            if (1 > 0.98*Ne*sum(omega_y[i, :]**2)):
+                  continue
+
+            var_a = np.sum(omega*(xo - xmpf)**2, axis = -1)[:, None]
+            var_a_y = np.sum(omega_y*(hxo - hxmpf)**2, axis = -1)[:, None]
+
+            norm = (1 - np.sum(omega**2, axis = -1))[:, None]
+            var_a = var_a/norm
+            norm = (1 - np.sum(omega_y**2, axis = -1))[:, None]
+            var_a_y = var_a_y/norm
+            #ks = np.random.choice(Ne, Ne, p = omega_y[i, :], replace=True)
+            ks = MISC.sampling(hxo[i, :], omega_y[i, :], Ne)
+            x = _pf_merge(x, xo[:, ks], C_pf[i, :], Ne, xmpf, var_a, gamma)
+            hx = _pf_merge(hx, hxo[:, ks], HCH[i, :], Ne, hxmpf, var_a_y, gamma)
+
+      if kddm_flag == 1:
+            for j in range(Nx):
+                  if np.var(x[j, :]) > 0:
+                        x[j, :] = MISC.kddm(x[j, :], xo[j, :], omega[j, :])
+
+            xmpf = np.mean(x, axis=1)
+
+            for j in range(Ny):
+                  hx[j, :] = MISC.kddm(hx[j, :], hxo[j, :], omega_y[j, :])
+      max_res = np.max(res)
+      return x, e_flag
+
+
 def _pf_merge(x, xs, loc, Ne, xmpf, var_a, alpha):
     '''Performs the merge step of the Local Particle Filter
     
