@@ -1177,7 +1177,7 @@ def runDA(expt: Expt, maxT : int = None):
 
             for k in range(Ny):
                   ind = np.where(H[k,:] == 1)[0][0]
-                  inds = np.arange(ind - Nb, k + Nb + 1)
+                  inds = np.arange(ind - Nb, ind + Nb + 1)
                   inds[inds < 0] += Nx
                   inds[inds >= Nx] -= Nx
                   for l in range(Ns):
@@ -1251,10 +1251,8 @@ def runDA(expt: Expt, maxT : int = None):
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
 
-                              print('about to start rkhs likelihood')
       
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
-                              print('out of rkhs likelihood')
                               if save_keest_pab != 0:
                                     expt.keest_pab = pab
                                     expt.x_train = x_train
@@ -1323,9 +1321,7 @@ def runDA(expt: Expt, maxT : int = None):
 
                               # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
 
-                              print('about to keest update')
                               xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
-                              print('out of keest update')
 
 
 
