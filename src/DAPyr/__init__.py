@@ -1191,6 +1191,7 @@ def runDA(expt: Expt, maxT : int = None):
       L = OBS_ERRORS.get_likelihood(prescribed_obs_err, prescribed_obs_err_params)
 
       for t in range(T):
+            print(t)
             #Observation
             xm = np.mean(xf, axis = -1)[:, np.newaxis]
             rmse_prior[t] = np.sqrt(np.mean((xt[:, t] - xm[:, 0])**2))
@@ -1252,6 +1253,7 @@ def runDA(expt: Expt, maxT : int = None):
                         else:
 
       
+                              print('starting rkhs')
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
                               if save_keest_pab != 0:
                                     expt.keest_pab = pab

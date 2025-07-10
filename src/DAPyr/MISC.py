@@ -250,11 +250,13 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       # Eigen decomposition
       v0 = rng.uniform(0, 1, n_keep)
       try:
+          print('starting eigenvalue solver')
           eig_vals, eig_vecs = eigsh(DO, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
       except apnc as e:
           eig_vals = e.eigenvalues
           eig_vecs = e.eigenvectors
           print(f'Only found {len(eig_vals)} out of {Neig + 1} eigenvectors')
+      print('done with eigenvalue solver')
 
    
       eig_vals = np.real(eig_vals)
@@ -330,7 +332,9 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       b_cop = b.copy()
 
       # Get eigenvectors and eigenvalues of diffusion maps
+      print('vb')
       Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
+      print('va')
       Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
 
 
