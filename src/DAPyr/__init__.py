@@ -20,6 +20,7 @@ import warnings
 
 from importlib import reload
 reload(OBS_ERRORS)
+reload(MISC)
 reload(DA)
 
 class Expt:
@@ -234,7 +235,16 @@ class Expt:
             self.states['xt'] = xt
             self.states['Y'] = Y
 
+
             #Initialize Variables for storage
+
+            Ny = self.getParam('Ny')
+            Nb = self.getParam('Nb')
+            Ns = 1 + 2*Nb
+            Nl = self.getParam('Nl')
+            T_train = self.getParam('T_train')
+            tof = self.getParam('tof')
+
 
             if self.getParam('saveEns') != 0:
                   self.x_ens = np.zeros((Nx, Ne, T))*np.nan #All Ensemble Members over time period
@@ -242,6 +252,10 @@ class Expt:
                   self.x_fore_ens = np.zeros((Nx, Ne, T))
             if self.getParam('saveEnsMean') != 0:
                   self.x_ensmean = np.zeros((Nx, T))*np.nan
+            if self.getParam('save_keest_pab') != 0:
+                  self.keest_pab = np.zeros((T_train * Ny // tof, T_train * Ny // tof))*np.nan
+                  self.x_train = np.zeros((Ns, T_train * Ny//tof))
+                  self.y_train = np.zeros((Nl, T_train * Ny//tof))
 
             self.rmse = np.zeros((T,)) #RMSE of Expt
             self.rmse_prior = np.zeros((T,))
@@ -290,6 +304,18 @@ class Expt:
             self.obsParams['prescribed_obs_err'] = 0
             self.obsParams['prescribed_obs_err_params'] = default_gaussian_params
 
+            #Kernel Embeddings Likelihood Estimation Parameters
+            # self.obsParams['do_keest'] = 0
+            self.obsParams['nle_type'] = 2
+            self.obsParams['Neig'] = 30
+            self.obsParams['knn_frac'] = 0.05
+            self.obsParams['bw_dm'] = 0.05
+            self.obsParams['bw_kde'] = -999
+            self.obsParams['T_train'] = 50
+            self.obsParams['tof'] = 1
+            self.obsParams['Nl'] = 1
+            self.obsParams['Nb'] = 0
+
             #Parameters related to observation quality control
             self.obsParams['qc_flag'] = 0
       def _initModel(self):
@@ -308,6 +334,8 @@ class Expt:
             self.miscParams['saveEns'] = 1
             self.miscParams['saveEnsMean'] = 1
             self.miscParams['saveForecastEns'] = 0
+            self.miscParams['save_keest_pab'] = 0
+
 
             #Default Singular Vector Parameters
             self.miscParams['doSV'] = 0 #0 for false, 1 for true
@@ -380,102 +408,117 @@ class Expt:
             #Only update parameters if they affect model spinup
             if updateRequired or reqUpdate:
                   self._updateParams()
-      # def __str__(self):
-      #       #Basic Model Setup Print
-      #       ret_str = f'''
-      #       ------------------
-      #       Basic Information
-      #       ------------------
-      #       Experiment Name: {self.exptname}
-      #       Ne: {self.basicParams['Ne']} # Number of Ensemble Members
-      #       T: {self.basicParams['T']} # Number of Time Periods
-      #       dt: {self.basicParams['dt']} # Width of Timesteps
-      #       seed: {self.getParam('seed')} # Sets a seed for the random number generator, set to -1 to turn off
 
-      #       ------------------
-      #       Model Information
-      #       ------------------
-      #       model_flag: {self.modelParams['model_flag']} # Model used in forward integration
-      #             0: Lorenz 1963 (Nx = 3)
-      #             1: Lorenz 1996 (Nx = 40)
-      #             2: Lorenz 2005 (Nx  = 480)
-      #       Nx: {self.modelParams['Nx']} # The number of state variables
-            
-      #       params: {self.modelParams['model_params']} # Parameters to tune each forecast model
-      #       Above is a list of all the parameters stored for use in the forecast model
-      #             Lorenz 1963: [s, r, b]
-      #             Lorenz 1996: [F]
-      #             Lorenz 2005: [l05_F, l05_Fe, l05_K, l05_I, l05_b, l05_c]
+      def __str__(self):
+             # Basic Model Setup Print
+            ret_str = (
+                  "------------------\n"
+                  "Basic Information\n"
+                  "------------------\n"
+                  f"Experiment Name: {self.exptname}\n"
+                  f"Ne: {self.basicParams['Ne']} # Number of Ensemble Members\n"
+                  f"T: {self.basicParams['T']} # Number of Time Periods\n"
+                  f"dt: {self.basicParams['dt']} # Width of Timesteps\n\n"
+                  
+                  "------------------\n"
+                  "Model Information\n"
+                  "------------------\n"
+                  f"model_flag: {self.modelParams['model_flag']} # Model used in forward integration\n"
+                  "      0: Lorenz 1963 (Nx = 3)\n"
+                  "      1: Lorenz 1996 (Nx = 40)\n"
+                  "      2: Lorenz 2005 (Nx  = 480)\n"
+                  f"Nx: {self.modelParams['Nx']} # The number of state variables\n"
+                  f"params: {self.modelParams['model_params']} # Parameters to tune each forecast model\n"
+                  "Above is a list of all the parameters stored for use in the forecast model\n"
+                  "      Lorenz 1963: [s, r, b]\n"
+                  "      Lorenz 1996: [F]\n"
+                  "      Lorenz 2005: [l05_F, l05_Fe, l05_K, l05_I, l05_b, l05_c]\n\n"
+                  
+                  "------------------------\n"
+                  "Observation Information\n"
+                  "------------------------\n"
+                  f"h_flag: {self.obsParams['h_flag']} # Type of measurement operator to use\n"
+                  "      0: Linear (x)\n"
+                  "      1: Quadratic (x^2)\n"
+                  "      2: Lognormal (log(abs(x)))\n"
+                  f"used_obs_err: {self.obsParams['used_obs_err']} # todo \n"
+                  f"used_obs_err_params: {self.obsParams['used_obs_err_params']} #todo \n"
+                  f"prescribed_obs_err: {self.obsParams['prescribed_obs_err']} #todo \n"
+                  f"prescribed_obs_err_params: {self.obsParams['prescribed_obs_err_params']} #todo \n"
+                  f"tau: {self.obsParams['tau']} # Number of model time steps between data assimilation cycles\n"
+                  f"obb: {self.obsParams['obb']} # Observation buffer: number of variables to skip when generating obs\n"
+                  f"obf: {self.obsParams['obf']} # Observation spatial frequency: spacing between variables\n"
+                  f"Ny: {self.obsParams['Ny']} # Number of observations to assimilate each cycle\n\n"
+                  
+                  "------------------------\n"
+                  "DA Method Parameter Information\n"
+                  "------------------------\n"
+                  f"expt_flag: {self.basicParams['expt_flag']} # DA method for update step\n"
+                  "      0: Ensemble Square Root Filter (EnSRF)\n"
+                  "      1: Local Particle Filter (LPF)\n"
+                  "      2: Stochastic EnKF \n"
+                  "      3: No update (xa = xf)\n"
+                  "      4: Kernel Embeddings Estimation LPF \n"
+                  "      ...\n"
+                  f"localize: {self.getParam('localize')} # Determines whether to apply localization\n"
+                  "      0: Off\n"
+                  "      1: On\n\n"
+                  
+                  "-----Kalman Filter (EnSRF)-----\n"
+                  f"roi_kf: {self.getParam('roi_kf')} # Kalman Filter Localization Radius\n"
+                  f"gamma: {self.getParam('gamma')} # RTPS parameter\n\n"
+                  
+                  "-----Local Particle Filter (LPF)-----\n"
+                  f"roi_pf: {self.getParam('roi_pf')} # Particle Filter Localization Radius\n"
+                  f"mixing_gamma: {self.getParam('mixing_gamma')} # Mixing coefficient for LPF\n"
+                  f"kddm_flag: {self.getParam('kddm_flag')} # Determine whether to apply additional kernal density estimator in LPF step\n"
+                  "      0: Off\n"
+                  "      1: On\n"
+                  f"maxiter: {self.getParam('maxiter')} # Maximum number of tempering iterations to run\n"
+                  f"min_res: {self.getParam('min_res')} # Minimum residual\n"
+                  f"Nt_eff: {self.getParam('Nt_eff')} # Effective Ensemble Size\n\n"
+                  
+                  "-----Kernel Embeddings Likelihood Estimation (KEEST)-----\n"
+                  # f"do_keest: {self.getParam('do_keest')} # determine whether to estimate nonparametric likelihoods\n"
+                  # "      0: Off\n"
+                  # "      1: On\n"
+                  f"nle_type: {self.getParam('nle_type')} # which flavor of KEEST to use.\n"
+                  "      2: Estimating p(e|xt)\n"
+                  "      3: Estimating p(e|xa)\n"
+                  "      4: Estimating p(y|xt)\n"
+                  "      5: Estimating p(y|xa)\n"
+                  f"Neig: {self.getParam('Neig')} # number of eigenvectors to use for diffusion map embedding\n"
+                  f"knn_frac: {self.getParam('knn_frac')} # fraction of nearest neighbors to use for diff maps\n"
+                  f"bw_dm: {self.getParam('bw_dm')} # bandwidtch for diffusion maps kernel\n"
+                  f"bw_kde: {self.getParam('bw_kde')} # bandwidth to use for KDE estimate of p(y); sentinel flag means adaptive selection\n"
+                  f"T_train: {self.getParam('T_train')} # number of time steps of data to train on\n"
+                  f"tof: {self.getParam('tof')} # training on every tof obs at each time\n"
+                  f"Nl: {self.getParam('Nl')} # dimension of observation vectors\n"
+                  f"Nb: {self.getParam('Nb')} # number of nearby states to use for model vector\n\n"
+                  
+                  "------------------------\n"
+                  "Miscellaneous Information\n"
+                  "------------------------\n"
+                  f"status: {self.getParam('status')} # Notes the status of the given experiment\n"
+                  "      init: The experiment has been initialized and spun-up, but not run using runDA\n"
+                  "      init error: An error occured while spinning up the experiment\n"
+                  "      run error: An error occured while running the experiment\n"
+                  "      completed: runDA has been called and the experiment completed without errors\n"
+                  f"output_dir: {self.getParam('output_dir')} # Default output dir for saving experiment-related material\n"
+                  f"saveEns: {self.getParam('saveEns')} # Determines whether full posterior ensemble state is saved at each time step\n"
+                  "      0: Off\n"
+                  "      1: On (Default)\n"
+                  f"saveEnsMean: {self.getParam('saveEnsMean')} # Determines whether ensemble mean is saved at each time step\n"
+                  "      0: Off\n"
+                  "      1: On (Default)\n"
+                  f"saveForecastEns: {self.getParam('saveForecastEns')} #Determines whether full prior ensemble state is saved at each time step\n"
+                  "      0: Off (Default)\n"
+                  "      1: On\n\n"
+                  f"save_keest_pab: {self.getParam('save_keest_pab')} # determines whether to save most recent estimate of p(a|b) from keest\n"
+                  f"NumPool: {self.getParam('NumPool')} # Number of CPU cores to use when multiprocessing\n"
+             )
+            return ret_str
 
-      #       ------------------------
-      #       Observation Information
-      #       ------------------------
-      #       h_flag: {self.obsParams['h_flag']} # Type of measurement operator to use
-      #             0: Linear (x)
-      #             1: Quadratic (x^2)
-      #             2: Lognormal (log(abs(x)))
-      #       sig_y: {self.obsParams['sig_y']} # Standard Deviation of observation error
-      #       tau: {self.obsParams['tau']} # Number of model time steps between data assimilation cycles
-      #       obb: {self.obsParams['obb']} # Observation buffer: number of variables to skip when generating obs
-      #       obf: {self.obsParams['obf']} # Observation spatial frequency: spacing between variables
-      #       Ny: {self.obsParams['Ny']} # Number of observations to assimilate each cycle
-
-      #       ------------------------
-      #       DA Method Parameter Information
-      #       ------------------------
-      #       expt_flag: {self.basicParams['expt_flag']} # DA method for update step
-      #             0: Ensemble Square Root Filter (EnSRF)
-      #             1: Local Particle Filter (LPF)
-      #             2: No update (xa = xf)
-      #             ...
-      #       localize: {self.getParam('localize')} # Determines whether to apply localization
-      #             0: Off
-      #             1: On
-      #       roi: {self.getParam('roi')} # Localization Radius
-      #       -----Kalman Filter (EnSRF)-----
-      #       gamma: {self.getParam('gamma')} # RTPS parameter
-
-      #       -----Local Particle Filter (LPF)-----
-      #       mixing_gamma: {self.getParam('mixing_gamma')} # Mixing coefficient for LPF
-      #       kddm_flag: {self.getParam('kddm_flag')} # Determine whether to apply additional kernal density estimator in LPF step
-      #             0: Off
-      #             1: On
-      #       maxiter: {self.getParam('maxiter')} # Maximum number of tempering iterations to run
-      #       min_res: {self.getParam('min_res')} # Minimum residual
-      #       Nt_eff: {self.getParam('Nt_eff')} # Effective Ensemble Size
-      #       ------------------------
-      #       Miscellaneous Information
-      #       ------------------------
-      #       status: {self.getParam('status')} # Notes the status of the given experiment
-      #             init: The experiment has been initialized and spun-up, but not run using runDA
-      #             init error: An error occurred while spinning up the experiment
-      #             init model error: An error occurred in spin up during model integration
-      #             run DA error: An error occured while running the experiment during the DA step
-      #             run model error: An error occurred in the experiment run during model integration
-      #             completed: runDA has been called and the experiment completed without errors
-      #       output_dir: {self.getParam('output_dir')} # Default output dir for saving experiment-related material
-      #       saveEns: {self.getParam('saveEns')} # Determines whether full posterior ensemble state is saved at each time step
-      #             0: Off
-      #             1: On (Default)
-      #       saveEnsMean: {self.getParam('saveEnsMean')} # Determines whether ensemble mean is saved at each time step
-      #             0: Off
-      #             1: On (Default)
-      #       saveForecastEns: {self.getParam('saveForecastEns')} #Determines whether full prior ensemble state is saved at each time step
-      #             0: Off (Default)
-      #             1: On
-      #       numPool: {self.getParam('numPool')} # Number of CPU cores to use when multiprocessing
-            
-      #       -----Singular Vector Configuration-----
-      #       doSV: {self.getParam('doSV')} # Flag to switch on signular value (SV) calculation
-      #       stepSV: {self.getParam('stepSV')} # Number of time steps between SV calculations
-      #       forecastSV: {self.getParam('forecastSV')} # SV optimization interval (in increments of time step)
-      #       outputSV: {self.getParam('outputSV')} # Output Directory for SV output
-      #       storeCovar: {self.getParam('storeCovar')} # Flag to determine whether to store the Analysis and Forecast States to estimate the covariance matrices
-      #             0: Off (Default)
-      #             1: On
-      #       '''
-            # return ret_str
-      
       def getBasicParams(self) -> tuple:
             '''Retrieve the basic parameters describing the experiment (Ne, Nx, T, and dt).
             
@@ -907,7 +950,65 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
             return fig, ax
       else:
             return ax
+
+def plot_pab(expt: Expt, ax = None):
+
+      if expt.getParam('save_keest_pab') == 0:
+            raise ValueError('No likelihood estimate information saved. Be sure that save_keest_pab is set to true.')
+
+      if ax is None:
+            fig, ax = plt.subplots(1, 1)
+
+      x_train = expt.x_train
+      y_train = expt.y_train
+
+
+      pab = expt.keest_pab
+            
       
+      ys = np.sort(y_train[0, :])
+      ind2 = np.argsort(y_train[0, :])
+      diff = np.diff(ys)
+
+      fig = plt.figure(31)
+      plt.clf()
+      cmap = plt.get_cmap('tab20')
+
+      htp = []
+
+      for ind, j in enumerate(np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])):
+            dum = np.abs(j - x_train[0, :])
+            ind1 = np.argsort(dum)[0]
+
+            h = pab[ind2, ind1]
+
+            # Normalize for plotting
+            normalization = np.sum((h[:-1] + h[1:]) * diff / 2)
+            h_norm = h / normalization
+            htp.append(h_norm)
+
+            # Plotting
+            ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
+            ax.axvline(x=j, color=cmap(ind))
+
+      bound = max(np.abs(np.min(x_train)), np.abs(np.max(x_train)))
+      ax.set_xlim([-bound, bound])
+      ax.set_ylim([0, np.max(htp)])
+
+      ax.set_title(f'Conditional Likelihood Estimates for Experiment {expt.exptname}')
+
+      if expt.getParam('nle_type') < 4:
+            ax.set_xlabel('$\epsilon$')
+            ax.set_ylabel('$p(\epsilon | x)$')
+      else:
+            ax.set_xlabel('$y$')
+            ax.set_ylabel('$p(y | x)$')
+
+
+      if ax is None:
+            return fig, ax
+      else:
+            return ax
 
 #TODO Add plotting funcitonality for Rank Histogram
 
@@ -972,6 +1073,19 @@ def runDA(expt: Expt, maxT : int = None):
       prescribed_obs_err = expt.getParam('prescribed_obs_err')
       prescribed_obs_err_params = expt.getParam('prescribed_obs_err_params')
 
+      # Nonparametric Likelihood Estimation Parameters
+      nle_type = expt.getParam('nle_type')
+      Neig = expt.getParam('Neig')
+      knn_frac = expt.getParam('knn_frac')
+      bw_dm = expt.getParam('bw_dm')
+      bw_kde = expt.getParam('bw_kde')
+      T_train = expt.getParam('T_train')
+      tof = expt.getParam('tof')
+      Nl = expt.getParam('Nl')
+      Nb = expt.getParam('Nb')
+      klb = 0.0
+      train_frac = 1.0
+
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
       qc_flag = expt.getParam('qc_flag')
@@ -989,6 +1103,7 @@ def runDA(expt: Expt, maxT : int = None):
       rmse_prior = expt.rmse_prior
       spread = expt.spread
 
+      save_keest_pab = expt.getParam('save_keest_pab')
       if saveEns:
             x_ens = expt.x_ens
       if saveEnsMean:
@@ -1010,11 +1125,15 @@ def runDA(expt: Expt, maxT : int = None):
                   var_y = prescribed_obs_err_params['sigma']
             else:
                   raise KeyError(f'Obs QAQC turned on but no observation error standard deviation provided in prescribed_obs_err_params: {prescribed_obs_err_params}')
-            
+            if expt_flag == 3:
+                  warnings.warn('QC Turned on but using nonparametric likelihood estiamation; QC will only be applied during training while using Gaussian likelihoods.')            
 
       #Open pool      
       #TODO Add exception handling in case function fails, 
       # make sure all the resources are released!
+
+      rng = np.random.default_rng(58)
+
       pool = mp.get_context('fork').Pool(numPool)
       pfunc = partial(MODELS.model, dt = dt, T = tau, funcptr = funcptr)
 
@@ -1046,6 +1165,23 @@ def runDA(expt: Expt, maxT : int = None):
                   sv_covar = {'Xa': (['t', 'Nx','mem'], np.zeros((sv_t, Nx, Ne))*np.nan), 
                                             'Xf': (['t', 'Nx','mem'], np.zeros((sv_t, Nx, Ne))*np.nan)}
             svpfunc = partial(MODELS.model, dt = dt, T = forecastSV, funcptr = funcptr)
+
+      # set up bookkeeping stuff for kernel embeddings NLE
+      knn = int(np.ceil(knn_frac * Ny * T_train))
+      Ns = 1 + 2 * Nb
+      x_train = np.zeros((Ns, T_train * Ny//tof))
+      y_train = np.zeros((Nl, T_train * Ny//tof))
+
+      if expt_flag == 3:
+            Hi = np.zeros((Ny, Ns, Nx))
+
+            for k in range(Ny):
+                  ind = np.where(H[k,:] == 1)[0][0]
+                  inds = np.arange(ind - Nb, ind + Nb + 1)
+                  inds[inds < 0] += Nx
+                  inds[inds >= Nx] -= Nx
+                  for l in range(Ns):
+                        Hi[k, l, inds[l]] = 1
 
       # Time Loop
       xf_0, xt, Y = expt.getStates()
@@ -1088,10 +1224,155 @@ def runDA(expt: Expt, maxT : int = None):
                         xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                   case 2: # Nothing
                         xa = xf
+                  case 3: # LPF using kernel embeddings
+                        if t < T_train:
+                              xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                              ts = t * Ny // tof
+                              te = ts + Ny // tof
+                              s = 0 # sample # from this cycle
+
+                              for k in range(0, Ny, tof):
+                                    
+                                    Htemp = Hi[k,:,:].squeeze()
+                                    s = s+1
+                                    # 2: p(e|xt)
+                                    # 3: p(e|xa)
+                                    # 4: p(y|xt)
+                                    # 5: p(y|xa)
+                                    if nle_type == 2 or nle_type == 4:
+                                          x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
+                                    elif nle_type == 3 or nle_type == 5:
+                                          x_train[:Ns,ts+s-1] = Htemp @ rng.choice(xa)
+                                          
+                              if nle_type == 4 or nle_type == 5:
+                                    y_train[ts:te] = Y[t,0::tof]
+                              else:
+                                    # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
+                                    y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
+                        else:
+
+      
+                              pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+                              if save_keest_pab != 0:
+                                    expt.keest_pab = pab
+                                    expt.x_train = x_train
+                                    expt.y_train = y_train
+
+                              pab += 1e-40
+
+                              hxb_nbrs = np.zeros((Ns, Ne, Ny))
+
+                              for n in range(Ne):
+                                  # State
+                                  for k in range(Ny):
+                                      Htemp = np.squeeze(Hi[k, :, :])  # Equivalent to squeeze(Hi(k,:,:))
+                                      if Ns == 1:
+                                          Htemp = Htemp.T  # Transpose if Ns == 1
+                                      hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
+                              hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
+
+
+                              # compute particle weights outside of particle filter
+
+                              Nxy = hxb_nbrs.shape[0]  # Equivalent to length(hx[:,0,0]) in MATLAB
+                              evec_x, eval_x, a_train_x, bwx = x_map
+                              evec_y, eval_y, a_train_y, bwy = y_map
+                              x_emb = (evec_x * eval_x).T
+                              y_emb = (evec_y * eval_y).T
+
+                              wo = np.zeros((Ny, Ne))
+
+                              for k in range(Ny):
+                                    if nle_type >= 4 :
+                                          obs_emb = MISC.diff_map_ext_nystrom(y[:,i-1,k].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          obs_emb *= eval_y
+                                          # ind2 = np.argmin(np.sum((Vyextra.T - Vyscaled.T) ** 2, axis=0))
+                                    for n in range(Ne):
+                                          if nle_type < 4:
+                                                obs_emb = MISC.diff_map_ext_nystrom(
+                                    # y_train[ts:te] = Y[t,0::tof]
+                                                      (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
+                                                      y_train.T,
+                                                      evec_y,
+                                                      eval_y,
+                                                      a_train_y,
+                                                      bwy,
+                                                      knn,
+                                                      1,
+                                                )
+                                                obs_emb *= eval_y  # Element-wise multiplication along columns
+                                                ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
+                                          # Find nearest state on manifold
+                                          state_emb = MISC.diff_map_ext_nystrom(
+                                                hxb_nbrs[:, k, n].reshape(1, -1),
+                                                x_train.T,
+                                                evec_x,
+                                                eval_x,
+                                                a_train_x,
+                                                bwx,
+                                                knn,
+                                                Ns,
+                                          )
+                                          state_emb *= eval_x  # Element-wise multiplication along columns
+                                          ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
+                                          wo[k,n] = pab[ind2, ind1]
+                                    # sum of normalized likelihoods for a given observation equals one
+                                    wo[k, :] /= np.sum(wo[k, :])
+
+                              # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
+
+                              xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+
+
+
+                              # augment new data onto x_train and y_train
+                              # TODO - play with looking at x train and y train before and after doing this and make sure you grok it all
+                              l = 0
+                              hxtemp = np.zeros((Ns, Ny // tof))
+
+                              
+                              for j in range(0, Ny, tof):
+                                    l += 1
+                                    Htemp = Hi[j, :, :].squeeze()
+                                    if Ns == 1:
+                                          Htemp = Htemp.T
+
+                                    # Use truth or random sample from posterior
+                                    if nle_type in [2, 4]:
+                                          hxtemp[:, l - 1] = Htemp @ xt[:,t]
+                                    else:
+                                          dum = np.random.randint(0, Ne, size=1)
+                                          hxtemp[:, l - 1] = hx[:, j, dum[0]]
+
+                                  # Replace randomly-selected past data with new data
+                              ind = np.arange(0,T_train*Ny)
+                              rng.shuffle(ind)
+
+                                    # y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
+
+                              xtrinit = x_train.copy()
+                              ytrinit = y_train.copy()
+                              l = 0
+                              for j in range(0, Ny, tof):
+                                    l += 1
+                                    x_train[:, ind[l - 1]] = hxtemp[:, l - 1]
+                                    if nle_type in [4,5]:
+                                          y_train[:Nl, ind[l - 1]] = Y[j, t,:]
+                                    else:
+                                          y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
+
+                        #        populate the next entries of x_train and y_train
+                        #        do normal LPF (see case 1)
+                        # else, 
+                        #        do estimation of p(whatever|whatever) (according to nle_type)
+                        #        do LPF with keest-estimated likelihoods
+                        #        replace a random element of the training dataset with this cycle's sample
+                        
 
             if e_flag != 0:
                   pool.close()
                   expt.modExpt({'status': 'run DA error'})
+                  print(expt.getParam('status'))
                   return expt.getParam('status')
             
             #TODO Add parameter that controls how often statistics are stored
