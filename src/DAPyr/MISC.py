@@ -197,9 +197,22 @@ def kddm(x, xo, w):
     return xa
 
 def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0, plotW=False):
+
       rng = np.random.default_rng(58)
 
       N, M = data.shape
+
+      # print('DEBUG dms')
+      # print(data)
+      # print(Neig)
+      # print(knn)
+      # print(bw)
+      # print(eigmin)
+      # print(Ns)
+      # print(train_frac)
+      # print(keep_rows)
+      # print(klb)
+      # print('^dm inputs')
 
       # Feature-wise scaling
       vt = data.copy()
@@ -250,7 +263,7 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       # Eigen decomposition
       v0 = rng.uniform(0, 1, n_keep)
       try:
-          eig_vals, eig_vecs = eigsh(DO, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+          eig_vals, eig_vecs = eigsh(DO, k=Neig + 1,  which="LM", v0=v0)
       except apnc as e:
           eig_vals = e.eigenvalues
           eig_vecs = e.eigenvectors
@@ -329,8 +342,20 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       a_cop = a.copy()
       b_cop = b.copy()
 
+      # DEBUG
+      # print('DEBUG rkhs')
+      # print(a)
+      # print(b)
+      # print(Neig)
+      # print(knn)
+      # print(klb)
+      # print(bw)
+      # print(Ns)
+      # print(train_frac)
+      # print('^^rkhs inputs')
+
       # Get eigenvectors and eigenvalues of diffusion maps
-      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
+      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, klb=klb)
       Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
 
 

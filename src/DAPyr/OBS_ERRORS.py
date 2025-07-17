@@ -19,7 +19,7 @@ from functools import partial
 
 GAUSSIAN = 0
 STATE_DEP_GAUSSIAN = 1
-LOGNORMAL = 2
+TOY_ICE_OBS = 2
 CAUCHY = 3
 UNIFORM_DONT_USE_ME = 4
 
@@ -52,6 +52,34 @@ def sample_errors(states, used_obs_error, params, rng):
             errs2 = rng.normal(mu2, sigma2, states.shape)
 
             errors = np.where(states < threshold, errs1, errs2)
+
+        case 2:
+            try:
+                mu, sigma = params["mu"], params["sigma"]
+                lnmu, lnsigma, lnscale = params["lnmu"], params["lnsigma"], params['lnscale']
+            except KeyError:
+                raise KeyError(f'Parameters mu, sigma, lnmu, lnsigma not provided in {params}')
+
+            errs_low =  rng.lognormal(lnmu, lnsigma, states.shape)/lnscale
+            errs_mid =  rng.normal(mu, sigma, states.shape)
+            errs_high = -rng.lognormal(lnmu, lnsigma, states.shape)/lnscale
+
+            errors = np.where(states < 0.1, errs_low, errs_mid)
+            errors = np.where(states > 0.9, errs_high, errors)
+
+            for i, row in enumerate(errors):
+                for j, val in enumerate(row):
+                    state = states[i,j]
+                    thresh_high = 1 - state
+                    thresh_low = -1*state
+                    while val <= thresh_low or val >= thresh_high:
+                        if state <= 0.1:
+                            val = rng.lognormal(lnmu, lnsigma)/lnscale
+                        elif state >= 0.9:
+                            val = -rng.lognormal(lnmu, lnsigma)/lnscale
+                        else:
+                            val = rng.normal(mu, sigma)
+                    errors[i,j] = val
 
     return errors
 

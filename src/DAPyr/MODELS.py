@@ -4,6 +4,8 @@ from numbalsoda import lsoda_sig, solve_ivp, lsoda
 from numba import cfunc
 import numba as nb
 
+
+
 def model(x, dt, T, funcptr):
       model_error = 0
       tspan = np.array([0, dt*T])
@@ -18,6 +20,36 @@ def model(x, dt, T, funcptr):
       if not success or np.allclose(tmp[-1, :], 0.0):
             model_error = 1
       return tmp[-1, :], model_error
+
+
+def sigmoid(q, a=10, shift=0.0):
+      return 1/(1+ np.exp(-a*(-q+shift)))
+
+def fice_model(params={'a': 10, 'shift':0.0, 'h_noise':0.0, 'v_noise':0.0, 'Nx':40, 'bound':5}, dt=0, T = 0, funcptr=0):
+
+      rng = np.random.default_rng(58)
+      x_dom = np.linspace(-params['bound'], params['bound'], params['Nx']) 
+      pre_threshold = sigmoid(x_dom, params['a'], params['shift'] + rng.normal(0, params['h_noise'])) 
+      post_threshold = np.zeros_like(pre_threshold)
+      for i in range(len(pre_threshold)):
+            val = pre_threshold[i] + rng.normal(0,params['v_noise'])
+            while val < 0 or val > 1:
+                  val = pre_threshold[i] + rng.normal(0,params['v_noise'])
+            post_threshold[i] = val
+
+      return post_threshold
+
+def linear_fice_model(params={'Nx':120, 'f': 1/3, 'v_noise':0.0}, dt=0, T=0, funcptr=0):
+      rng = np.random.default_rng(58)
+      Nx, f = params['Nx'], params['f']
+      v_noise = params['v_noise']
+      midpoint = Nx//2
+      dec_start, dec_end = int(midpoint - Nx*f//2), int(midpoint + Nx*f//2)
+      return np.concatenate((
+                  np.ones(dec_start),
+                  np.linspace(0, 1, dec_end - dec_start)[::-1],
+                  np.zeros(Nx-dec_end),
+            )) + rng.normal(0, v_noise, Nx)
 
 def make_rhs_l63(kwargs):
       s = kwargs['s']

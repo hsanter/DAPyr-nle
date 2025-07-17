@@ -20,6 +20,7 @@ import warnings
 
 from importlib import reload
 reload(OBS_ERRORS)
+reload(MODELS)
 reload(MISC)
 reload(DA)
 
@@ -107,49 +108,82 @@ class Expt:
 
       def _spinup(self, Nx, Ne, dt, T, tau, funcptr, numPool, sig_y, h_flag, H):
             #Initial Ensemble
-            #Spin Up
+            model_flag = self.getParam('model_flag')
+            fice_t_params = self.getParam('fice_t_params')
+            fice_e_params = self.getParam('fice_e_params')
+            lfice_t_params = self.getParam('lfice_t_params')
+            lfice_e_params = self.getParam('lfice_e_params')
+
             seed = self.getParam('seed')
             if seed >= 0:
                   rng = np.random.default_rng(seed)
             else:
                   rng = np.random.default_rng()
-            xt_0 = 3*np.sin(np.arange(Nx)/(6*2*np.pi))
-            xt_0, model_error = MODELS.model(xt_0, dt, 100, funcptr)
 
-            if model_error != 0:
-                  warnings.warn('Model integration failed.')
-                  self.modExpt({'status': 'init model error'})
 
-            #Multiprocessing
-            xf_0 = xt_0[:, np.newaxis] + 1*rng.standard_normal((Nx, Ne))
-            pfunc = partial(MODELS.model, dt = dt, T = 100, funcptr=funcptr)
-            
-            with mp.get_context('fork').Pool(numPool) as pool:
-                  pool_results  = pool.map(pfunc, [xf_0[:, i] for i in range(Ne)])
-                  xf_0 = np.stack([x for x, _ in pool_results], axis = -1)
-                  model_errors = np.array([y for _, y in pool_results])
-            if np.any(model_errors != 0):
-                  warnings.warn('Model integration failed.')
-                  self.modExpt({'status': 'init model error'})
-            #for n in range(Ne):
-            #      xf_0[:, n], model_error = MODELS.model(xf_0[:, n], dt, 100, funcptr)
-            #      if model_error != 0 :
-            #           warnings.warn('Model integration failed.')
-            #           self.modExpt({'status': 'init model error'})
-      
-            #Create Model Truth
-            xt = np.zeros((Nx, T))
-            xt[:,0], model_error = MODELS.model(xt_0, dt, 100, funcptr)
+            #Spin Up
+            if model_flag < 4:
 
-            if model_error != 0:
-                  warnings.warn('Model integration failed.')
-                  self.modExpt({'status': 'init model error'})
+                  xt_0 = 3*np.sin(np.arange(Nx)/(6*2*np.pi))
+                  xt_0, model_error = MODELS.model(xt_0, dt, 100, funcptr)
 
-            for t in range(T-1):
-                  xt[:, t+1], model_error = MODELS.model(xt[:, t], dt, tau, funcptr)
                   if model_error != 0:
                         warnings.warn('Model integration failed.')
                         self.modExpt({'status': 'init model error'})
+
+                  #Multiprocessing
+                  xf_0 = xt_0[:, np.newaxis] + 1*rng.standard_normal((Nx, Ne))
+                  pfunc = partial(MODELS.model, dt = dt, T = 100, funcptr=funcptr)
+
+                  with mp.get_context('fork').Pool(numPool) as pool:
+                        pool_results  = pool.map(pfunc, [xf_0[:, i] for i in range(Ne)])
+                        xf_0 = np.stack([x for x, _ in pool_results], axis = -1)
+                        model_errors = np.array([y for _, y in pool_results])
+                  if np.any(model_errors != 0):
+                        warnings.warn('Model integration failed.')
+                        self.modExpt({'status': 'init model error'})
+
+
+                  #Create Model Truth
+                  xt = np.zeros((Nx, T))
+                  xt[:,0], model_error = MODELS.model(xt_0, dt, 100, funcptr)
+
+                  if model_error != 0:
+                        warnings.warn('Model integration failed.')
+                        self.modExpt({'status': 'init model error'})
+
+                  for t in range(T-1):
+                        xt[:, t+1], model_error = MODELS.model(xt[:, t], dt, tau, funcptr)
+                        if model_error != 0:
+                              warnings.warn('Model integration failed.')
+                              self.modExpt({'status': 'init model error'})
+            elif model_flag == 4:
+                  xt_0 = MODELS.fice_model(params=fice_t_params)
+
+                  xf_0 = xt_0[:, np.newaxis] + 0*np.random.randn(Nx, Ne)
+                  for n in range(Ne):
+                        xf_0[:, n] = MODELS.fice_model(params=fice_e_params)
+
+
+            
+                  xt = np.zeros((Nx, T))
+                  for t in range(T):
+                        xt[:,t] = MODELS.fice_model(params=fice_t_params)
+
+
+            elif model_flag == 5:
+                  xt_0 = MODELS.linear_fice_model(params=lfice_t_params)
+
+                  xf_0 = xt_0[:, np.newaxis] + 0*np.random.randn(Nx, Ne)
+                  for n in range(Ne):
+                        xf_0[:, n] = MODELS.linear_fice_model(params=lfice_e_params)
+
+
+            
+                  xt = np.zeros((Nx, T))
+                  for t in range(T):
+                        xt[:,t] = MODELS.linear_fice_model(params=lfice_t_params)
+
 
             #Synthetic Observations
             used_obs_err = self.getParam('used_obs_err')
@@ -181,7 +215,13 @@ class Expt:
                   case 2: #Lorenz 05
                         self.modelParams['rhs'] = MODELS.make_rhs_l05(self.modelParams['model_params'])
                         self.modelParams['Nx'] = 480
-            self.modelParams['funcptr'] = self.modelParams['rhs'].address
+                  case 4:
+                        self.modelParams['Nx'] = self.getParam('fice_e_params')['Nx']
+                  case 5:
+                        self.modelParams['Nx'] = self.getParam('lfice_e_params')['Nx']
+                        
+            if model_flag < 4 :
+                  self.modelParams['funcptr'] = self.modelParams['rhs'].address
       
       def _configObs(self):
             #Extra Observation stuff
@@ -213,6 +253,8 @@ class Expt:
             #Clear old RMSE, spread, and saved runtime attributes
             self._clearAttributes()
             #Model Truth            
+            model_flag = self.modelParams['model_flag']
+
             dt = self.basicParams['dt']
             Ne = self.basicParams['Ne']
             T = self.basicParams['T']
@@ -225,7 +267,12 @@ class Expt:
 
             self._configObs()
 
-            Nx = self.getParam('Nx')
+            if model_flag < 4:
+                  Nx = self.getParam('Nx')
+            elif model_flag == 4:
+                  Nx = self.getParam('fice_e_params')['Nx']
+            elif model_flag == 5:
+                  Nx = self.getParam('lfice_e_params')['Nx']
             h_flag = self.getParam('h_flag')
             H = self.getParam("H")
             #Do model spinup
@@ -315,9 +362,11 @@ class Expt:
             self.obsParams['tof'] = 1
             self.obsParams['Nl'] = 1
             self.obsParams['Nb'] = 0
+            self.obsParams['debug_nle_noDA'] = False
 
             #Parameters related to observation quality control
             self.obsParams['qc_flag'] = 0
+
       def _initModel(self):
             self.modelParams['model_flag'] = 0
             #Store the default parameters for all the possible models here
@@ -326,6 +375,22 @@ class Expt:
                       'l05_K':32, 'l05_I':12, 
                       'l05_b':10.0, 'l05_c':2.5}
             self.modelParams['model_params'] = params
+
+            fice_t_params = {
+                      'a': 10, 'shift': 0.0, 'h_noise':0.0, 'v_noise':0.0, 'Nx':40, 'bound':3}
+            fice_e_params = {
+                      'a': 10, 'shift': 0.0,'h_noise':0.3, 'v_noise':0.0, 'Nx':40, 'bound': 3}
+            self.modelParams['fice_t_params'] = fice_t_params
+            self.modelParams['fice_e_params'] = fice_e_params
+
+
+            lfice_t_params = {
+                      'v_noise':0.0, 'Nx':120, 'f':1/3}
+            lfice_e_params = {
+                      'v_noise':0.0, 'Nx':120, 'f':1/3}
+            self.modelParams['lfice_t_params'] = lfice_t_params
+            self.modelParams['lfice_e_params'] = lfice_e_params
+
       def _initMisc(self):
             #Output Parameters
             self.miscParams['status'] = 'init'
@@ -335,6 +400,7 @@ class Expt:
             self.miscParams['saveEnsMean'] = 1
             self.miscParams['saveForecastEns'] = 0
             self.miscParams['save_keest_pab'] = 0
+            self.miscParams['pab_sample_states'] = -999
 
 
             #Default Singular Vector Parameters
@@ -796,7 +862,7 @@ def plotLocalization(expt: Expt, ax = None):
       if ax is None:
             return fig, ax
 
-def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plotEnsMean = False):
+def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plotEnsMean = False, plotForecastEns=False, plotForecastEnsMean=False):
       """Plots the model truth, obs, ensembles, and ensemble mean at time T.
 
       Parameters
@@ -827,8 +893,13 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
           Raised if the Expt instance passed has not be run through `runDA()`, or an invalid time step, T, provided.
 
       """
+
+      model_flag = expt.getParam('model_flag')
       if ax is None:
-            fig, ax = plt.subplots(1, 1, subplot_kw={'projection': '3d'})
+            if model_flag < 4:
+                  fig, ax = plt.subplots(1, 1, subplot_kw={'projection': '3d'})
+            else:
+                  fig, ax = plt.subplots(1, 1)
 
       if not isinstance(expt, Expt):
             raise TypeError("expt not an instance of the Expt class")
@@ -842,6 +913,10 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
       Nt = expt.getParam('T')
       H = expt.getParam('H')
       model_flag = expt.getParam('model_flag')
+      obf = expt.getParam('obf')
+
+      if model_flag == 4:
+            bound = expt.getParam('fice_t_params')['bound']
 
       if T < 0 or T > Nt:
             raise ValueError('Time step T ({}) not in range of Experiment ({})'.format(T, Nt))
@@ -851,6 +926,8 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
             x_ens = expt.x_ensmean[:, :T+1]
       if plotEns:
             x = expt.x_ens[:, :, :T+1]
+      if plotForecastEns:
+            xf = expt.x_fore_ens[:, :, :T+1]
       
       #Store all necessary information for plotting, depending on model
       if model_flag == 0:
@@ -872,7 +949,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
                   x_obs[ind] = Y[:, T, 0]
                   xs_y, ys_y, zs_y = x_obs[0], x_obs[1], x_obs[2]
 
-      else:
+      elif model_flag == 1 or model_flag == 2:
             ts = np.linspace(0, 2*np.pi, Nx)
             xs, ys = np.cos(ts), np.sin(ts)
 
@@ -892,58 +969,116 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
             #Model Truth
             xs_t, ys_t = xs, ys
             zs_t = xt[:, T]
+
+      elif model_flag == 4:
+            xs = np.linspace(-bound,bound,Nx)
+
+            if plotEns:
+                  ys = x[:,:,-1]
+            if plotForecastEns:
+                  ys_fore = xf[:,:,-1]
+            if plotEnsMean:
+                  xs_ens = np.linspace(-bound, bound, Nx)
+                  ys_ens = x_ens[:,-1]
+
+            xs_t = xs
+            ys_t = xt[:, T]
+
+            if plotObs:
+                  xs_y = xs_t[::obf]
+                  ys_Y = Y[:,T,:]
+
+
+      elif model_flag == 5:
+            xs = np.arange(Nx)
+
+            if plotEns:
+                  ys = x[:,:,-1]
+            if plotForecastEns:
+                  ys_fore = xf[:,:,-1]
+            if plotEnsMean:
+                  xs_ens = np.arange(Nx)
+                  ys_ens = x_ens[:,-1]
+
+            xs_t = xs
+            ys_t = xt[:, T]
+
+            if plotObs:
+                  xs_y = xs_t[::obf]
+                  ys_Y = Y[:,T,:]
+            
       
       #Start plotting on the axis object
 
       #Plot Ensemble Members
-      if plotEns:
-            for n in range(Ne):
-                  if model_flag == 0:
-                        ax.plot3D(xs[:, n], ys[:, n], zs[:, n], c = 'grey', alpha = 0.5)
-                        ax.scatter(xs[-1, n], ys[-1, n], zs[-1, n], c = 'grey', alpha = 0.5)
-                  else:
-                        ax.plot3D(xs, ys, zs[:, n], c = 'grey', alpha = 0.5)
+      if model_flag < 4:
+            if plotEns:
+                  for n in range(Ne):
+                        if model_flag == 0:
+                              ax.plot3D(xs[:, n], ys[:, n], zs[:, n], c = 'grey', alpha = 0.5)
+                              ax.scatter(xs[-1, n], ys[-1, n], zs[-1, n], c = 'grey', alpha = 0.5)
+                        else:
+                              ax.plot3D(xs, ys, zs[:, n], c = 'grey', alpha = 0.5)
 
-      #Plot Model Truth
-      ax.plot3D(xs_t, ys_t, zs_t, 'blue', label = 'True')
+            #Plot Model Truth
+            ax.plot3D(xs_t, ys_t, zs_t, 'blue', label = 'True')
 
-      if model_flag==0:
-            ax.scatter(xs_t[-1], ys_t[-1], zs_t[-1], c = 'blue')
-
-      #Ensemble Mean
-      if plotEnsMean:
-            ax.plot3D(xs_ens, ys_ens, zs_ens, c = 'red', label = 'Post. Mean')
-            if model_flag == 0:
-                  ax.scatter(xs_ens[-1], ys_ens[-1], zs_ens[-1], c = 'red', label = 'Post. Mean')
-      #Plot Observations
-      if plotObs:
             if model_flag==0:
-                  #Plot observations directly on 3d axis labels
-                  #Adjust axis limits to fit points
-                  old_xlim = ax.get_xlim()
-                  old_ylim = ax.get_ylim()
-                  old_zlim = ax.get_zlim()
-                  xlim = (np.min([x_obs[0], old_xlim[0]]), np.max([x_obs[0], old_xlim[1]]))
-                  ylim = (np.min([x_obs[1], old_ylim[0]]), np.max([x_obs[1], old_ylim[1]]))
-                  zlim = (np.min([x_obs[2], old_zlim[0]]), np.max([x_obs[2], old_zlim[1]]))
-                  for axis in ind:
-                        match axis:
-                              case 0: #X axis
-                                    #Plot the model truth dot
-                                    ax.scatter(xs_t[-1], ylim[0], zlim[0], c = 'blue')
-                                    ax.scatter(x_obs[0], ylim[0], zlim[0], c = 'blue', marker = '^')
-                              case 1: #Y axis
-                                    ax.scatter(xlim[1], ys_t[-1], zlim[0], c = 'blue')
-                                    ax.scatter(xlim[1], x_obs[1], zlim[0], c = 'blue', marker = '^')
-                              case 2: #Z Axis
-                                    ax.scatter(xlim[1], ylim[1], zs_t[-1], c = 'blue')
-                                    ax.scatter(xlim[1], ylim[1], x_obs[2], c = 'blue', marker = '^')       
-                  ax.set_xlim(xlim)
-                  ax.set_ylim(ylim)
-                  ax.set_zlim(zlim)
+                  ax.scatter(xs_t[-1], ys_t[-1], zs_t[-1], c = 'blue')
 
-            else:
-                  ax.scatter(xs_y, ys_y, zs_y, c = 'blue', marker = '^')
+            #Ensemble Mean
+            if plotEnsMean:
+                  ax.plot3D(xs_ens, ys_ens, zs_ens, c = 'red', label = 'Post. Mean')
+                  if model_flag == 0:
+                        ax.scatter(xs_ens[-1], ys_ens[-1], zs_ens[-1], c = 'red', label = 'Post. Mean')
+            #Plot Observations
+            if plotObs:
+                  if model_flag==0:
+                        #Plot observations directly on 3d axis labels
+                        #Adjust axis limits to fit points
+                        old_xlim = ax.get_xlim()
+                        old_ylim = ax.get_ylim()
+                        old_zlim = ax.get_zlim()
+                        xlim = (np.min([x_obs[0], old_xlim[0]]), np.max([x_obs[0], old_xlim[1]]))
+                        ylim = (np.min([x_obs[1], old_ylim[0]]), np.max([x_obs[1], old_ylim[1]]))
+                        zlim = (np.min([x_obs[2], old_zlim[0]]), np.max([x_obs[2], old_zlim[1]]))
+                        for axis in ind:
+                              match axis:
+                                    case 0: #X axis
+                                          #Plot the model truth dot
+                                          ax.scatter(xs_t[-1], ylim[0], zlim[0], c = 'blue')
+                                          ax.scatter(x_obs[0], ylim[0], zlim[0], c = 'blue', marker = '^')
+                                    case 1: #Y axis
+                                          ax.scatter(xlim[1], ys_t[-1], zlim[0], c = 'blue')
+                                          ax.scatter(xlim[1], x_obs[1], zlim[0], c = 'blue', marker = '^')
+                                    case 2: #Z Axis
+                                          ax.scatter(xlim[1], ylim[1], zs_t[-1], c = 'blue')
+                                          ax.scatter(xlim[1], ylim[1], x_obs[2], c = 'blue', marker = '^')       
+                        ax.set_xlim(xlim)
+                        ax.set_ylim(ylim)
+                        ax.set_zlim(zlim)
+
+                  else:
+                        ax.scatter(xs_y, ys_y, zs_y, c = 'blue', marker = '^')
+      else:
+            if plotEns:
+                  #Plot Ensemble Members
+                  for n in range(Ne):
+                        ax.plot(xs, ys[:, n], c = 'grey', alpha = 0.5)
+            if plotForecastEns:
+                  #Plot Ensemble Members
+                  for n in range(Ne):
+                        ax.plot(xs, ys_fore[:, n], c = 'magenta', alpha = 0.8, linestyle='dotted')
+                        
+            #Truth
+            ax.plot(xs_t, ys_t, 'blue', label = 'True')
+
+            #Ensemble Mean
+            if plotEnsMean:
+                  ax.plot(xs_ens, ys_ens, c = 'red', label = 'Post. Mean')
+
+            if plotObs:
+                  ax.scatter(xs_y, ys_Y, c='green', label='Obs',zorder=5)
 
       #Return statement
       if ax is None:
@@ -951,7 +1086,10 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
       else:
             return ax
 
-def plot_pab(expt: Expt, ax = None):
+def plot_pab(expt: Expt, ax = None, plot_states = False):
+
+      if expt.getParam('expt_flag') != 3:
+            raise ValueError('This experiment did not perform nonparametric likelihood estimation, so there\'s nothing to show!')
 
       if expt.getParam('save_keest_pab') == 0:
             raise ValueError('No likelihood estimate information saved. Be sure that save_keest_pab is set to true.')
@@ -962,9 +1100,10 @@ def plot_pab(expt: Expt, ax = None):
       x_train = expt.x_train
       y_train = expt.y_train
 
+      pab_sample_states = expt.getParam('pab_sample_states')
 
       pab = expt.keest_pab
-            
+
       
       ys = np.sort(y_train[0, :])
       ind2 = np.argsort(y_train[0, :])
@@ -976,8 +1115,14 @@ def plot_pab(expt: Expt, ax = None):
 
       htp = []
 
-      for ind, j in enumerate(np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])):
+      states = np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])
+      if pab_sample_states != -999:
+            states = pab_sample_states
+      
+      for ind, j in enumerate(states):
             dum = np.abs(j - x_train[0, :])
+            # print(x_train[0,0:100])
+            # print(np.argsort(dum))
             ind1 = np.argsort(dum)[0]
 
             h = pab[ind2, ind1]
@@ -987,9 +1132,16 @@ def plot_pab(expt: Expt, ax = None):
             h_norm = h / normalization
             htp.append(h_norm)
 
+            # print(ind)
+            # print(j)
+            # print(ys)
+            # print(h_norm)
+            # print('\n')
+
             # Plotting
             ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
-            ax.axvline(x=j, color=cmap(ind))
+            if plot_states:
+                  ax.axvline(x=j, color=cmap(ind))
 
       bound = max(np.abs(np.min(x_train)), np.abs(np.max(x_train)))
       ax.set_xlim([-bound, bound])
@@ -1085,12 +1237,18 @@ def runDA(expt: Expt, maxT : int = None):
       Nb = expt.getParam('Nb')
       klb = 0.0
       train_frac = 1.0
+      debug_nle_noDA = expt.getParam('debug_nle_noDA')
+
+      # toy ice problem parameters
+      fice_e_params = expt.getParam('fice_e_params')
+      lfice_e_params = expt.getParam('lfice_e_params')
 
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
       qc_flag = expt.getParam('qc_flag')
 
       #Model Parameters
+      model_flag = expt.getParam('model_flag')
       params, funcptr = expt.getParam('model_params'), expt.getParam('funcptr')
       saveEns = expt.getParam('saveEns')
       saveEnsMean = expt.getParam('saveEnsMean')
@@ -1135,7 +1293,12 @@ def runDA(expt: Expt, maxT : int = None):
       rng = np.random.default_rng(58)
 
       pool = mp.get_context('fork').Pool(numPool)
-      pfunc = partial(MODELS.model, dt = dt, T = tau, funcptr = funcptr)
+      if model_flag < 4:
+            pfunc = partial(MODELS.model, dt = dt, T = tau, funcptr = funcptr)
+      elif model_flag == 4:
+            pfunc = partial(MODELS.fice_model, params=0)
+      elif model_flag == 5:
+            pfunc = partial(MODELS.linear_fice_model, params=0)
 
       #Misc Parameters
       doSV = expt.getParam('doSV')
@@ -1175,13 +1338,25 @@ def runDA(expt: Expt, maxT : int = None):
       if expt_flag == 3:
             Hi = np.zeros((Ny, Ns, Nx))
 
-            for k in range(Ny):
-                  ind = np.where(H[k,:] == 1)[0][0]
-                  inds = np.arange(ind - Nb, ind + Nb + 1)
-                  inds[inds < 0] += Nx
-                  inds[inds >= Nx] -= Nx
-                  for l in range(Ns):
-                        Hi[k, l, inds[l]] = 1
+            if model_flag < 4:
+                  for k in range(Ny):
+                        ind = np.where(H[k,:] == 1)[0][0]
+                        inds = np.arange(ind - Nb, ind + Nb + 1)
+                        inds[inds < 0] += Nx
+                        inds[inds >= Nx] -= Nx
+                        for l in range(Ns):
+                              Hi[k, l, inds[l]] = 1
+            else:
+                  for k in range(Ny):
+                        j = np.where(H[k, :] == 1)[0][0]  
+                        if j - Nb < 0:
+                              ind = np.arange(j, j + 2 * Nb + 1)
+                        elif j + Nb + 1 > Nx:
+                              ind = np.arange(j - 2 * Nb, j + 1)
+                        else:
+                              ind = np.arange(j - Nb, j + Nb + 1)  
+                        for l in range(Ns):
+                              Hi[k, l, ind[l]] = 1
 
       # Time Loop
       xf_0, xt, Y = expt.getStates()
@@ -1191,6 +1366,10 @@ def runDA(expt: Expt, maxT : int = None):
       L = OBS_ERRORS.get_likelihood(prescribed_obs_err, prescribed_obs_err_params)
 
       for t in range(T):
+
+            if t%50 == 0:
+                  print(f'DB: starting cycle {t}')
+
             #Observation
             xm = np.mean(xf, axis = -1)[:, np.newaxis]
             rmse_prior[t] = np.sqrt(np.mean((xt[:, t] - xm[:, 0])**2))
@@ -1226,7 +1405,10 @@ def runDA(expt: Expt, maxT : int = None):
                         xa = xf
                   case 3: # LPF using kernel embeddings
                         if t < T_train:
-                              xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                              if debug_nle_noDA:
+                                    xa=xf
+                              else:
+                                    xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                               ts = t * Ny // tof
                               te = ts + Ny // tof
                               s = 0 # sample # from this cycle
@@ -1250,15 +1432,15 @@ def runDA(expt: Expt, maxT : int = None):
                                     # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
-
       
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
-                              if save_keest_pab != 0:
-                                    expt.keest_pab = pab
-                                    expt.x_train = x_train
-                                    expt.y_train = y_train
 
                               pab += 1e-40
+
+                              if save_keest_pab != 0:
+                                    expt.keest_pab = pab.copy()
+                                    expt.x_train = x_train.copy()
+                                    expt.y_train = y_train.copy()
 
                               hxb_nbrs = np.zeros((Ns, Ne, Ny))
 
@@ -1321,7 +1503,11 @@ def runDA(expt: Expt, maxT : int = None):
 
                               # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
 
-                              xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+
+                              if debug_nle_noDA:
+                                    xa=xf
+                              else:
+                                    xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
 
 
 
@@ -1407,14 +1593,23 @@ def runDA(expt: Expt, maxT : int = None):
             #Model integrate forward
             #Multiprocessing
             #xf = np.stack(pool.map(pfunc, [xa[:, i] for i in range(Ne)]), axis = -1)
-            pool_results  = pool.map(pfunc, [xa[:, i] for i in range(Ne)])
-            xf = np.stack([x for x, _ in pool_results], axis = -1)
-            model_errors = np.array([y for _, y in pool_results])
-            if np.any(model_errors != 0):
-                  pool.close()
-                  warnings.warn('Model integration failed at time T = {}. Terminating Experiment'.format(t))
-                  expt.modExpt({'status': 'run model error'})
-                  return expt.getParam('status')
+            if model_flag < 4:
+      
+                  pool_results  = pool.map(pfunc, [xa[:, i] for i in range(Ne)])
+                  xf = np.stack([x for x, _ in pool_results], axis = -1)
+                  model_errors = np.array([y for _, y in pool_results])
+                  if np.any(model_errors != 0):
+                        pool.close()
+                        warnings.warn('Model integration failed at time T = {}. Terminating Experiment'.format(t))
+                        expt.modExpt({'status': 'run model error'})
+                        return expt.getParam('status')
+            elif model_flag == 4:
+                  for n in range(Ne):
+                        xf[:,n] = MODELS.fice_model(fice_e_params)
+            elif model_flag == 5:
+                  for n in range(Ne):
+                        xf[:,n] = MODELS.linear_fice_model(lfice_e_params)
+      
 
 
             #No multiprocessing: Uncomment below for no multiprocessing
