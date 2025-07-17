@@ -1253,12 +1253,13 @@ def runDA(expt: Expt, maxT : int = None):
 
       
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
-                              if save_keest_pab != 0:
-                                    expt.keest_pab = pab
-                                    expt.x_train = x_train
-                                    expt.y_train = y_train
 
                               pab += 1e-40
+
+                              if save_keest_pab != 0:
+                                    expt.keest_pab = pab.copy()
+                                    expt.x_train = x_train.copy()
+                                    expt.y_train = y_train.copy()
 
                               hxb_nbrs = np.zeros((Ns, Ne, Ny))
 
