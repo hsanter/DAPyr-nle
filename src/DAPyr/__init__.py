@@ -17,6 +17,7 @@ from . import Exceptions as dapExceptions
 import pickle
 import matplotlib.pyplot as plt
 import warnings
+from scipy.io import savemat
 
 from importlib import reload
 reload(OBS_ERRORS)
@@ -362,6 +363,7 @@ class Expt:
             self.obsParams['tof'] = 1
             self.obsParams['Nl'] = 1
             self.obsParams['Nb'] = 0
+            self.obsParams['klb'] = 0.0
             self.obsParams['debug_nle_noDA'] = False
 
             #Parameters related to observation quality control
@@ -555,6 +557,7 @@ class Expt:
                   "      5: Estimating p(y|xa)\n"
                   f"Neig: {self.getParam('Neig')} # number of eigenvectors to use for diffusion map embedding\n"
                   f"knn_frac: {self.getParam('knn_frac')} # fraction of nearest neighbors to use for diff maps\n"
+                  f"klb: {self.getParam('klb')} \n"
                   f"bw_dm: {self.getParam('bw_dm')} # bandwidtch for diffusion maps kernel\n"
                   f"bw_kde: {self.getParam('bw_kde')} # bandwidth to use for KDE estimate of p(y); sentinel flag means adaptive selection\n"
                   f"T_train: {self.getParam('T_train')} # number of time steps of data to train on\n"
@@ -1121,27 +1124,16 @@ def plot_pab(expt: Expt, ax = None, plot_states = False):
       
       for ind, j in enumerate(states):
             dum = np.abs(j - x_train[0, :])
-            # print(x_train[0,0:100])
-            # print(np.argsort(dum))
             ind1 = np.argsort(dum)[0]
-
             h = pab[ind2, ind1]
-
             # Normalize for plotting
             normalization = np.sum((h[:-1] + h[1:]) * diff / 2)
             h_norm = h / normalization
             htp.append(h_norm)
-
-            # print(ind)
-            # print(j)
-            # print(ys)
-            # print(h_norm)
-            # print('\n')
-
             # Plotting
             ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
             if plot_states:
-                  ax.axvline(x=j, color=cmap(ind))
+                  ax.axvline(x=j, color=cmap(ind), linestyle='dotted')
 
       bound = max(np.abs(np.min(x_train)), np.abs(np.max(x_train)))
       ax.set_xlim([-bound, bound])
@@ -1235,7 +1227,7 @@ def runDA(expt: Expt, maxT : int = None):
       tof = expt.getParam('tof')
       Nl = expt.getParam('Nl')
       Nb = expt.getParam('Nb')
-      klb = 0.0
+      klb = expt.getParam('klb')
       train_frac = 1.0
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
 
@@ -1433,6 +1425,7 @@ def runDA(expt: Expt, maxT : int = None):
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
       
+                              savemat('training.mat', {'yt': y_train, 'xt':x_train, 'Neig': Neig, 'knn': knn, 'bw':bw_dm})
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
 
                               pab += 1e-40
