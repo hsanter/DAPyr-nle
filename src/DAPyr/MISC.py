@@ -364,8 +364,49 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       b_signs = np.where(Vb[0] < 0, -1, 1)
       Vb *= b_signs
 
-      x_emb = (Vb * Db).T
-      y_emb = (Va * Da).T
+      a_cop = a_cop[keeps]
+      b_cop = b_cop[keeps]
+
+      for i in range(a_cop.shape[1]):
+          # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
+          a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
+
+      kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
+      qa = kde(a_cop.T)
+
+      # Calculate kernel mean embeddings
+      N, M1 = Va.shape
+      N, M2 = Vb.shape
+      
+      Va *= Da
+      Vb *= Db
+
+      Cab = (Va.T @ Vb) / N
+      Cbb = (Vb.T @ Vb) / N
+
+      C = Cab @ inv(Cbb, overwrite_a=True)
+      Mu = (Vb @ C.T)
+      
+      # Compute pab
+      pab = (Va @ Mu.T) * qa[:, np.newaxis]
+      
+      # Remove imaginary and negative values
+      pab[pab < 0] = 0
+      pab = np.real(pab)
+      
+      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps
+
+def rkhs_likelihood_gauss(a, b, Neig, knn, klb, bw, Ns, train_frac):
+
+
+      N = a.shape[0]
+      a_cop = a.copy()
+      b_cop = b.copy()
+
+      # Get eigenvectors and eigenvalues of diffusion maps
+      
+      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, klb=klb)
+      Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
 
       a_cop = a_cop[keeps]
       b_cop = b_cop[keeps]
