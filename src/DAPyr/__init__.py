@@ -1359,7 +1359,7 @@ def runDA(expt: Expt, maxT : int = None):
 
       for t in range(T):
 
-            if t%50 == 0:
+            if t%10 == 0:
                   print(f'DB: starting cycle {t}')
 
             #Observation
@@ -1551,6 +1551,7 @@ def runDA(expt: Expt, maxT : int = None):
             if e_flag != 0:
                   pool.close()
                   expt.modExpt({'status': 'run DA error'})
+                  print('Error flag is nonzero!')
                   print(expt.getParam('status'))
                   return expt.getParam('status')
             

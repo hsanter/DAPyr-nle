@@ -51,7 +51,7 @@ def sample_errors(states, used_obs_error, params, rng):
             errs1 = rng.normal(mu1, sigma1, states.shape)
             errs2 = rng.normal(mu2, sigma2, states.shape)
 
-            errors = np.where(states < threshold, errs1, errs2)
+            errors = np.where(states > threshold, errs1, errs2)
 
         case 2:
             try:
