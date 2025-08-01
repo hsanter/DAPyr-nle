@@ -17,7 +17,7 @@ from . import Exceptions as dapExceptions
 import pickle
 import matplotlib.pyplot as plt
 import warnings
-from scipy.io import savemat
+from scipy.io import savemat, loadmat
 
 from importlib import reload
 reload(OBS_ERRORS)
@@ -1089,7 +1089,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
       else:
             return ax
 
-def plot_pab(expt: Expt, ax = None, plot_states = False):
+def plot_pab(expt: Expt, ax = None, plot_states = False, pab_sample_states=-999):
 
       if expt.getParam('expt_flag') != 3:
             raise ValueError('This experiment did not perform nonparametric likelihood estimation, so there\'s nothing to show!')
@@ -1103,10 +1103,7 @@ def plot_pab(expt: Expt, ax = None, plot_states = False):
       x_train = expt.x_train
       y_train = expt.y_train
 
-      pab_sample_states = expt.getParam('pab_sample_states')
-
       pab = expt.keest_pab
-
       
       ys = np.sort(y_train[0, :])
       ind2 = np.argsort(y_train[0, :])
@@ -1121,6 +1118,7 @@ def plot_pab(expt: Expt, ax = None, plot_states = False):
       states = np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])
       if pab_sample_states != -999:
             states = pab_sample_states
+
       
       for ind, j in enumerate(states):
             dum = np.abs(j - x_train[0, :])
@@ -1133,11 +1131,12 @@ def plot_pab(expt: Expt, ax = None, plot_states = False):
             # Plotting
             ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
             if plot_states:
-                  ax.axvline(x=j, color=cmap(ind), linestyle='dotted')
+                  ax.axvline(x=j, color=cmap(ind), linestyle='dotted', label=f'x={j}')
 
       bound = max(np.abs(np.min(x_train)), np.abs(np.max(x_train)))
       ax.set_xlim([-bound, bound])
       ax.set_ylim([0, np.max(htp)])
+      ax.legend()
 
       ax.set_title(f'Conditional Likelihood Estimates for Experiment {expt.exptname}')
 
@@ -1352,6 +1351,9 @@ def runDA(expt: Expt, maxT : int = None):
 
       # Time Loop
       xf_0, xt, Y = expt.getStates()
+
+
+      
       xf = copy.deepcopy(xf_0)
 
       # Retrieve likelihood function (for use with LPF only)
@@ -1359,8 +1361,9 @@ def runDA(expt: Expt, maxT : int = None):
 
       for t in range(T):
 
-            if t%10 == 0:
+            if t%100 == 0:
                   print(f'DB: starting cycle {t}')
+                  # pass
 
             #Observation
             xm = np.mean(xf, axis = -1)[:, np.newaxis]
@@ -1416,19 +1419,29 @@ def runDA(expt: Expt, maxT : int = None):
                                     if nle_type == 2 or nle_type == 4:
                                           x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
                                     elif nle_type == 3 or nle_type == 5:
-                                          x_train[:Ns,ts+s-1] = Htemp @ rng.choice(xa)
+                                          choose_mem = rng.integers(0, Ne)
+                                          random_member = xa[:,choose_mem]
+                                          x_train[:Ns,ts+s-1] = Htemp @ random_member
                                           
                               if nle_type == 4 or nle_type == 5:
-                                    y_train[ts:te] = Y[t,0::tof]
+                                    y_train[:Nl,ts:te] = Y[0::tof,t,:].T
                               else:
                                     # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
       
-                              savemat('training.mat', {'yt': y_train, 'xt':x_train, 'Neig': Neig, 'knn': knn, 'bw':bw_dm})
+                              # return y_train, x_train
+                              # print(y_train)
+                              # print(x_train)
+                              # print(Neig)
+                              # print(knn)
+                              # print(bw_dm)
+                              # print(Ns)
                               pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
 
                               pab += 1e-40
+                              print('params')
+                              print(pab.shape)
 
                               if save_keest_pab != 0:
                                     expt.keest_pab = pab.copy()
@@ -1459,9 +1472,9 @@ def runDA(expt: Expt, maxT : int = None):
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
-                                          obs_emb = MISC.diff_map_ext_nystrom(y[:,i-1,k].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           obs_emb *= eval_y
-                                          # ind2 = np.argmin(np.sum((Vyextra.T - Vyscaled.T) ** 2, axis=0))
+                                          ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                     for n in range(Ne):
                                           if nle_type < 4:
                                                 obs_emb = MISC.diff_map_ext_nystrom(
@@ -1520,8 +1533,9 @@ def runDA(expt: Expt, maxT : int = None):
                                     if nle_type in [2, 4]:
                                           hxtemp[:, l - 1] = Htemp @ xt[:,t]
                                     else:
-                                          dum = np.random.randint(0, Ne, size=1)
-                                          hxtemp[:, l - 1] = hx[:, j, dum[0]]
+                                          dum = rng.integers(0, Ne)
+                                          hxtemp[:, l - 1] = hxb_nbrs[:, j, dum]
+                                          # hxtemp[:, l - 1] = Htemp @ rng.choice(xa)
 
                                   # Replace randomly-selected past data with new data
                               ind = np.arange(0,T_train*Ny)
@@ -1536,7 +1550,7 @@ def runDA(expt: Expt, maxT : int = None):
                                     l += 1
                                     x_train[:, ind[l - 1]] = hxtemp[:, l - 1]
                                     if nle_type in [4,5]:
-                                          y_train[:Nl, ind[l - 1]] = Y[j, t,:]
+                                          y_train[:Nl, ind[l - 1]] = Y[j, t, :]
                                     else:
                                           y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
 

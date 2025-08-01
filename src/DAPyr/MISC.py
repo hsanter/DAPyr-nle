@@ -348,11 +348,10 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # print(b)
       # print(Neig)
       # print(knn)
-      # print(klb)
       # print(bw)
       # print(Ns)
-      # print(train_frac)
       # print('^^rkhs inputs')
+      # return
 
       # Get eigenvectors and eigenvalues of diffusion maps
       Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, klb=klb)
