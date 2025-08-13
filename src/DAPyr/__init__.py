@@ -355,6 +355,7 @@ class Expt:
             #Kernel Embeddings Likelihood Estimation Parameters
             # self.obsParams['do_keest'] = 0
             self.obsParams['nle_type'] = 2
+            self.obsParams['nle_every'] = 1
             self.obsParams['Neig'] = 30
             self.obsParams['knn_frac'] = 0.05
             self.obsParams['bw_dm'] = 0.05
@@ -413,6 +414,7 @@ class Expt:
             self.miscParams['storeCovar']= 0 #Store the covariances 
 
             self.miscParams['numPool'] = 8
+            self.miscParams['debug_nle_noDA'] = False
 
       def resetParams(self):
             '''Reset all Expt parameters to their default values.'''
@@ -555,9 +557,10 @@ class Expt:
                   "      3: Estimating p(e|xa)\n"
                   "      4: Estimating p(y|xt)\n"
                   "      5: Estimating p(y|xa)\n"
+                  f"nle_every: {self.getParam('nle_every')} # how often to do kernel embeddings estimation.\n"
                   f"Neig: {self.getParam('Neig')} # number of eigenvectors to use for diffusion map embedding\n"
                   f"knn_frac: {self.getParam('knn_frac')} # fraction of nearest neighbors to use for diff maps\n"
-                  f"klb: {self.getParam('klb')} \n"
+                  f"klb: {self.getParam('klb')} # \n"
                   f"bw_dm: {self.getParam('bw_dm')} # bandwidtch for diffusion maps kernel\n"
                   f"bw_kde: {self.getParam('bw_kde')} # bandwidth to use for KDE estimate of p(y); sentinel flag means adaptive selection\n"
                   f"T_train: {self.getParam('T_train')} # number of time steps of data to train on\n"
@@ -1115,11 +1118,11 @@ def plot_pab(expt: Expt, ax = None, plot_states = False, pab_sample_states=-999)
 
       htp = []
 
-      states = np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])
-      if pab_sample_states != -999:
+      if pab_sample_states == -999:
+            states = np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])
+      else:
             states = pab_sample_states
 
-      
       for ind, j in enumerate(states):
             dum = np.abs(j - x_train[0, :])
             ind1 = np.argsort(dum)[0]
@@ -1218,6 +1221,7 @@ def runDA(expt: Expt, maxT : int = None):
 
       # Nonparametric Likelihood Estimation Parameters
       nle_type = expt.getParam('nle_type')
+      nle_every = expt.getParam('nle_every')
       Neig = expt.getParam('Neig')
       knn_frac = expt.getParam('knn_frac')
       bw_dm = expt.getParam('bw_dm')
@@ -1401,7 +1405,7 @@ def runDA(expt: Expt, maxT : int = None):
                   case 3: # LPF using kernel embeddings
                         if t < T_train:
                               if debug_nle_noDA:
-                                    xa=xf
+                                    xa = xf
                               else:
                                     xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                               ts = t * Ny // tof
@@ -1419,9 +1423,10 @@ def runDA(expt: Expt, maxT : int = None):
                                     if nle_type == 2 or nle_type == 4:
                                           x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
                                     elif nle_type == 3 or nle_type == 5:
-                                          choose_mem = rng.integers(0, Ne)
+                                          choose_mem = rng.integers(0,Ne)
                                           random_member = xa[:,choose_mem]
                                           x_train[:Ns,ts+s-1] = Htemp @ random_member
+                                          
                                           
                               if nle_type == 4 or nle_type == 5:
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T
@@ -1429,24 +1434,6 @@ def runDA(expt: Expt, maxT : int = None):
                                     # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
-      
-                              # return y_train, x_train
-                              # print(y_train)
-                              # print(x_train)
-                              # print(Neig)
-                              # print(knn)
-                              # print(bw_dm)
-                              # print(Ns)
-                              pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
-
-                              pab += 1e-40
-                              print('params')
-                              print(pab.shape)
-
-                              if save_keest_pab != 0:
-                                    expt.keest_pab = pab.copy()
-                                    expt.x_train = x_train.copy()
-                                    expt.y_train = y_train.copy()
 
                               hxb_nbrs = np.zeros((Ns, Ne, Ny))
 
@@ -1459,6 +1446,19 @@ def runDA(expt: Expt, maxT : int = None):
                                       hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
 
+                              if (t - T_train) % nle_every == 0:
+                              
+
+                                    # print(f'doing nle at time {t}')
+
+                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+
+                                    pab += 1e-40
+
+                                    if save_keest_pab != 0:
+                                          expt.keest_pab = pab.copy()
+                                          expt.x_train = x_train.copy()
+                                          expt.y_train = y_train.copy()
 
                               # compute particle weights outside of particle filter
 
@@ -1509,9 +1509,8 @@ def runDA(expt: Expt, maxT : int = None):
 
                               # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
 
-
                               if debug_nle_noDA:
-                                    xa=xf
+                                    xa = xf
                               else:
                                     xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
 
@@ -1533,9 +1532,8 @@ def runDA(expt: Expt, maxT : int = None):
                                     if nle_type in [2, 4]:
                                           hxtemp[:, l - 1] = Htemp @ xt[:,t]
                                     else:
-                                          dum = rng.integers(0, Ne)
-                                          hxtemp[:, l - 1] = hxb_nbrs[:, j, dum]
-                                          # hxtemp[:, l - 1] = Htemp @ rng.choice(xa)
+                                          random_member = rng.integers(0,Ne)
+                                          hxtemp[:, l - 1] = hxb_nbrs[:, j, random_member]
 
                                   # Replace randomly-selected past data with new data
                               ind = np.arange(0,T_train*Ny)
