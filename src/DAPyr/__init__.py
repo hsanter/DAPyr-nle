@@ -403,7 +403,6 @@ class Expt:
             self.miscParams['saveEnsMean'] = 1
             self.miscParams['saveForecastEns'] = 0
             self.miscParams['save_keest_pab'] = 0
-            self.miscParams['pab_sample_states'] = -999
 
 
             #Default Singular Vector Parameters
