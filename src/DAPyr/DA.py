@@ -300,7 +300,6 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
       lomega = np.zeros_like(omega)
       lomega_y = np.zeros_like(omega_y)
 
-      print(e_flag)
 
       
       if np.any(np.isnan(wo)):
