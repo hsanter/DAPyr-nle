@@ -4,6 +4,7 @@ from numbalsoda import lsoda_sig, solve_ivp, lsoda
 from numba import cfunc
 import numba as nb
 
+rng = np.random.default_rng(58)
 
 
 def model(x, dt, T, funcptr):
@@ -27,7 +28,6 @@ def sigmoid(q, a=10, shift=0.0):
 
 def fice_model(params={'a': 10, 'shift':0.0, 'h_noise':0.0, 'v_noise':0.0, 'Nx':40, 'bound':5}, dt=0, T = 0, funcptr=0):
 
-      rng = np.random.default_rng(58)
       x_dom = np.linspace(-params['bound'], params['bound'], params['Nx']) 
       pre_threshold = sigmoid(x_dom, params['a'], params['shift'] + rng.normal(0, params['h_noise'])) 
       post_threshold = np.zeros_like(pre_threshold)
@@ -40,7 +40,6 @@ def fice_model(params={'a': 10, 'shift':0.0, 'h_noise':0.0, 'v_noise':0.0, 'Nx':
       return post_threshold
 
 def linear_fice_model(params={'Nx':120, 'f': 1/3, 'v_noise':0.0}, dt=0, T=0, funcptr=0):
-      rng = np.random.default_rng(58)
       Nx, f = params['Nx'], params['f']
       v_noise = params['v_noise']
       midpoint = Nx//2

@@ -18,6 +18,7 @@ import pickle
 import matplotlib.pyplot as plt
 import warnings
 from scipy.io import savemat, loadmat
+from scipy.stats import norm
 
 from importlib import reload
 reload(OBS_ERRORS)
@@ -1133,12 +1134,16 @@ def plot_pab(expt: Expt, ax = None, plot_states = False, pab_sample_states=-999)
             # Plotting
             ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
             if plot_states:
-                  ax.axvline(x=j, color=cmap(ind), linestyle='dotted', label=f'x={j}')
+                  ax.axvline(x=j, color=cmap(ind), linestyle='dotted', label=f'x={j:.3f}')
 
       bound = max(np.abs(np.min(x_train)), np.abs(np.max(x_train)))
       ax.set_xlim([-bound, bound])
       ax.set_ylim([0, np.max(htp)])
       ax.legend()
+
+      # plot_temp = np.linspace(-10, 10, 4000)
+      # ax.plot(plot_temp, norm.pdf(plot_temp, loc=2.0, scale=1 ),c='k', linestyle='dashed')
+      # ax.plot(plot_temp, norm.pdf(plot_temp, loc=-2.0, scale=1),c='k', linestyle='dashed')
 
       ax.set_title(f'Conditional Likelihood Estimates for Experiment {expt.exptname}')
 
