@@ -373,6 +373,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
           # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
           a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
 
+      # kde = gaussian_kde(a_cop.T, bw_method='scott')
       kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
       qa = kde(a_cop.T)
 

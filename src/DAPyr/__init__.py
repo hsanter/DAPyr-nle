@@ -115,6 +115,9 @@ class Expt:
             fice_e_params = self.getParam('fice_e_params')
             lfice_t_params = self.getParam('lfice_t_params')
             lfice_e_params = self.getParam('lfice_e_params')
+            pfice_t_params = self.getParam('pfice_t_params')
+            pfice_e_params = self.getParam('pfice_e_params')
+            stagger_params = self.getParam('stagger_params')
 
             seed = self.getParam('seed')
             if seed >= 0:
@@ -186,6 +189,32 @@ class Expt:
                   for t in range(T):
                         xt[:,t] = MODELS.linear_fice_model(params=lfice_t_params)
 
+            elif model_flag == 6:
+                  xt_0 = MODELS.per_fice_model(params=pfice_t_params)
+
+                  xf_0 = xt_0[:, np.newaxis] + 0*np.random.randn(Nx, Ne)
+                  for n in range(Ne):
+                        xf_0[:, n] = MODELS.per_fice_model(params=pfice_e_params)
+
+
+            
+                  xt = np.zeros((Nx, T))
+                  for t in range(T):
+                        xt[:,t] = MODELS.per_fice_model(params=pfice_t_params)
+
+            elif model_flag == 7:
+                  xt_0 = MODELS.staggered_model(params=stagger_params)
+
+                  xf_0 = xt_0[:, np.newaxis] + 0*np.random.randn(Nx, Ne)
+                  for n in range(Ne):
+                        xf_0[:, n] = MODELS.staggered_model(params=stagger_params)
+
+
+            
+                  xt = np.zeros((Nx, T))
+                  for t in range(T):
+                        xt[:,t] = MODELS.staggered_model(params=stagger_params)
+
 
             #Synthetic Observations
             used_obs_err = self.getParam('used_obs_err')
@@ -221,6 +250,10 @@ class Expt:
                         self.modelParams['Nx'] = self.getParam('fice_e_params')['Nx']
                   case 5:
                         self.modelParams['Nx'] = self.getParam('lfice_e_params')['Nx']
+                  case 6:
+                        self.modelParams['Nx'] = self.getParam('pfice_e_params')['Nx']
+                  case 7:
+                        self.modelParams['Nx'] = self.getParam('stagger_params')['Nx']
                         
             if model_flag < 4 :
                   self.modelParams['funcptr'] = self.modelParams['rhs'].address
@@ -275,6 +308,10 @@ class Expt:
                   Nx = self.getParam('fice_e_params')['Nx']
             elif model_flag == 5:
                   Nx = self.getParam('lfice_e_params')['Nx']
+            elif model_flag == 6:
+                  Nx = self.getParam('pfice_e_params')['Nx']
+            elif model_flag == 7:
+                  Nx = self.getParam('stagger_params')['Nx']
             h_flag = self.getParam('h_flag')
             H = self.getParam("H")
             #Do model spinup
@@ -394,6 +431,21 @@ class Expt:
                       'v_noise':0.0, 'Nx':120, 'f':1/3}
             self.modelParams['lfice_t_params'] = lfice_t_params
             self.modelParams['lfice_e_params'] = lfice_e_params
+
+            pfice_t_params = {
+                      'a1':10, 'a2':10, 'roll':0, 'v_noise':0.0, 'Nx':100}
+            pfice_e_params = {
+                      'a1':10, 'a2':10, 'roll':0, 'v_noise':0.0, 'Nx':100}
+            self.modelParams['pfice_t_params'] = pfice_t_params
+            self.modelParams['pfice_e_params'] = pfice_e_params
+
+
+            stagger_params = {
+                      'v_noise':0.0, 'Nx':120}
+            stagger_params = {
+                      'v_noise':0.0, 'Nx':120}
+            self.modelParams['stagger_params'] = stagger_params
+            self.modelParams['stagger_params'] = stagger_params
 
       def _initMisc(self):
             #Output Parameters
@@ -902,7 +954,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
 
       model_flag = expt.getParam('model_flag')
       if ax is None:
-            if model_flag < 4:
+            if model_flag < 4 or model_flag == 6:
                   fig, ax = plt.subplots(1, 1, subplot_kw={'projection': '3d'})
             else:
                   fig, ax = plt.subplots(1, 1)
@@ -955,7 +1007,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
                   x_obs[ind] = Y[:, T, 0]
                   xs_y, ys_y, zs_y = x_obs[0], x_obs[1], x_obs[2]
 
-      elif model_flag == 1 or model_flag == 2:
+      elif model_flag == 1 or model_flag == 2 or model_flag == 6:
             ts = np.linspace(0, 2*np.pi, Nx)
             xs, ys = np.cos(ts), np.sin(ts)
 
@@ -995,7 +1047,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
                   ys_Y = Y[:,T,:]
 
 
-      elif model_flag == 5:
+      elif model_flag == 5 or model_flag == 7: 
             xs = np.arange(Nx)
 
             if plotEns:
@@ -1012,12 +1064,13 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
             if plotObs:
                   xs_y = xs_t[::obf]
                   ys_Y = Y[:,T,:]
+
             
       
       #Start plotting on the axis object
 
       #Plot Ensemble Members
-      if model_flag < 4:
+      if model_flag < 4 or model_flag == 6:
             if plotEns:
                   for n in range(Ne):
                         if model_flag == 0:
@@ -1065,7 +1118,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
                         ax.set_zlim(zlim)
 
                   else:
-                        ax.scatter(xs_y, ys_y, zs_y, c = 'blue', marker = '^')
+                        ax.scatter(xs_y, ys_y, zs_y, c = 'blue', marker = '^', zorder=5)
       else:
             if plotEns:
                   #Plot Ensemble Members
@@ -1084,7 +1137,7 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
                   ax.plot(xs_ens, ys_ens, c = 'red', label = 'Post. Mean')
 
             if plotObs:
-                  ax.scatter(xs_y, ys_Y, c='green', label='Obs',zorder=5)
+                  ax.scatter(xs_y, ys_Y, c='skyblue', label='Obs',s=10, zorder=5)
 
       #Return statement
       if ax is None:
@@ -1132,7 +1185,7 @@ def plot_pab(expt: Expt, ax = None, plot_states = False, pab_sample_states=-999)
             h_norm = h / normalization
             htp.append(h_norm)
             # Plotting
-            ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
+            ax.plot(ys, h_norm, alpha=0.7, linewidth=2, color=cmap(ind))
             if plot_states:
                   ax.axvline(x=j, color=cmap(ind), linestyle='dotted', label=f'x={j:.3f}')
 
@@ -1241,6 +1294,8 @@ def runDA(expt: Expt, maxT : int = None):
       # toy ice problem parameters
       fice_e_params = expt.getParam('fice_e_params')
       lfice_e_params = expt.getParam('lfice_e_params')
+      pfice_e_params = expt.getParam('pfice_e_params')
+      stagger_params = expt.getParam('stagger_params')
 
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
@@ -1298,6 +1353,10 @@ def runDA(expt: Expt, maxT : int = None):
             pfunc = partial(MODELS.fice_model, params=0)
       elif model_flag == 5:
             pfunc = partial(MODELS.linear_fice_model, params=0)
+      elif model_flag == 6:
+            pfunc = partial(MODELS.per_fice_model, params=0)
+      elif model_flag == 7:
+            pfunc = partial(MODELS.staggered_model, params=0)
 
       #Misc Parameters
       doSV = expt.getParam('doSV')
@@ -1337,7 +1396,7 @@ def runDA(expt: Expt, maxT : int = None):
       if expt_flag == 3:
             Hi = np.zeros((Ny, Ns, Nx))
 
-            if model_flag < 4:
+            if model_flag < 4 or model_flag == 6:
                   for k in range(Ny):
                         ind = np.where(H[k,:] == 1)[0][0]
                         inds = np.arange(ind - Nb, ind + Nb + 1)
@@ -1369,7 +1428,7 @@ def runDA(expt: Expt, maxT : int = None):
 
       for t in range(T):
 
-            if t%100 == 0:
+            if t%200 == 0:
                   print(f'DB: starting cycle {t}')
                   # pass
 
@@ -1471,6 +1530,9 @@ def runDA(expt: Expt, maxT : int = None):
                               evec_y, eval_y, a_train_y, bwy = y_map
                               x_emb = (evec_x * eval_x).T
                               y_emb = (evec_y * eval_y).T
+
+                              expt.x_map = x_map
+                              expt.y_map = y_map
 
                               wo = np.zeros((Ny, Ne))
 
@@ -1619,6 +1681,12 @@ def runDA(expt: Expt, maxT : int = None):
             elif model_flag == 5:
                   for n in range(Ne):
                         xf[:,n] = MODELS.linear_fice_model(lfice_e_params)
+            elif model_flag == 6:
+                  for n in range(Ne):
+                        xf[:,n] = MODELS.per_fice_model(pfice_e_params)
+            elif model_flag == 7:
+                  for n in range(Ne):
+                        xf[:,n] = MODELS.staggered_model(stagger_params)
       
 
 

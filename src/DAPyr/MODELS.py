@@ -22,9 +22,36 @@ def model(x, dt, T, funcptr):
             model_error = 1
       return tmp[-1, :], model_error
 
+def staggered_model(params={'v_noise':0.0, 'Nx':120},dt =0, T = 0, funcptr=0):
+      pre_threshold = np.concatenate([np.ones(24) * i/4 for i in range(5)])[::-1]
+      post_threshold = np.zeros_like(pre_threshold)
+      for i in range(len(pre_threshold)):
+            val = pre_threshold[i] + rng.normal(0,params['v_noise'])
+            while val < 0 or val > 1:
+                  val = pre_threshold[i] + rng.normal(0,params['v_noise'])
+            post_threshold[i] = val
+
+      return post_threshold
+
 
 def sigmoid(q, a=10, shift=0.0):
       return 1/(1+ np.exp(-a*(-q+shift)))
+
+def per_fice_model(params={'a1': 10, 'a2':10, 'roll':0, 'v_noise':0.0, 'Nx':100}, dt=0, T = 0, funcptr=0):
+      x_dom = np.linspace(-2,2,params['Nx']//2)
+      xl = sigmoid(x_dom, a=params['a1']) + rng.normal(0, params['v_noise'], params['Nx']//2)
+      xr = sigmoid(-x_dom, a=params['a2']) + rng.normal(0, params['v_noise'], params['Nx']//2)
+      pre_threshold = np.roll(np.concatenate((xl,xr)), params['roll'])
+
+      post_threshold = np.zeros_like(pre_threshold)
+      for i in range(len(pre_threshold)):
+            val = pre_threshold[i] + rng.normal(0,params['v_noise'])
+            while val < 0 or val > 1:
+                  val = pre_threshold[i] + rng.normal(0,params['v_noise'])
+            post_threshold[i] = val
+
+      return post_threshold
+
 
 def fice_model(params={'a': 10, 'shift':0.0, 'h_noise':0.0, 'v_noise':0.0, 'Nx':40, 'bound':5}, dt=0, T = 0, funcptr=0):
 
