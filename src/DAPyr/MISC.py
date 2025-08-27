@@ -345,11 +345,13 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       a_cop = a_cop[keeps]
       b_cop = b_cop[keeps]
 
-      for i in range(a_cop.shape[1]):
+      # TODO WHATS THIS FOR
+      # for i in range(a_cop.shape[1]):
           # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
-          a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
+          # a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
 
-      kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
+      # kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
+      kde = gaussian_kde(a_cop.T, bw_method='scott')
       qa = kde(a_cop.T)
 
       # Calculate kernel mean embeddings
@@ -366,7 +368,11 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       Mu = (Vb @ C.T)
       
       # Compute pab
+      print((Va @ Mu.T).shape)
+      print(qa[:,np.newaxis].shape)
+      
       pab = (Va @ Mu.T) * qa[:, np.newaxis]
+      print(pab.shape)
       
       # Remove imaginary and negative values
       pab[pab < 0] = 0
