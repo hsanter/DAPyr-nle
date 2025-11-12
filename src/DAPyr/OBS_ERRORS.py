@@ -21,6 +21,7 @@ GAUSSIAN = 0
 STATE_DEP_GAUSSIAN = 1
 LOGNORMAL = 2
 CAUCHY = 3
+LOGISTIC = 5
 UNIFORM_DONT_USE_ME = 4
 
 
@@ -52,6 +53,18 @@ def sample_errors(states, used_obs_error, params, rng):
             errs2 = rng.normal(mu2, sigma2, states.shape)
 
             errors = np.where(states < threshold, errs1, errs2)
+        case 3:
+            try:
+                x0, gamma = params["x0"], params["gamma"]
+            except KeyError:
+                raise KeyError(f'Parameters x0 and gamma not provided in {params}')
+            errors = x0 + gamma * rng.standard_cauchy(size=states.shape)
+        case 5:
+            try:
+                x0, scale = params["x0"], params["scale"]
+            except KeyError:
+                raise KeyError(f'Parameters x0 and scale not provided in {params}')
+            errors = rng.logistic(loc = x0, scale=scale, size=states.shape)
 
     return errors
 
@@ -61,6 +74,14 @@ def get_likelihood(prescribed_obs_error, params):
         d = (y - hx - mu) ** 2 / (2 * sigma**2)
         d -= np.min(d, axis=-1)[:,None]
         return np.exp(-d)
+
+    def cauchy_l(y, hx, x0, gamma):
+        square_me = (y - hx - x0)/gamma
+        return 1/(np.pi * gamma * (1 + square_me**2))
+
+    def logistic_l(y, hx, x0, scale):
+        exp = np.exp(-(y - hx - x0)/scale)
+        return exp/(scale * (1 + exp)**2)
 
     def state_dep_gaussian_l(y, hx, mu1, mu2, sigma1, sigma2, threshold):
         l_low = np.exp(-((y - hx - mu1) ** 2 / (2 * sigma1**2)))
@@ -85,3 +106,23 @@ def get_likelihood(prescribed_obs_error, params):
                 )
             except KeyError:
                 raise KeyError(f'Parameters mu1, sigma1, mu2, sigma2, and threshold not provided in {params}')
+
+        case 3:
+            try:
+                return partial(
+                    cauchy_l,
+                    x0=params["x0"],
+                    gamma=params["gamma"],
+                )
+            except KeyError:
+                raise KeyError(f'Parameters x0, gamma not provided in {params}')
+
+        case 5:
+            try:
+                return partial(
+                    logistic_l,
+                    x0=params["x0"],
+                    scale=params["scale"],
+                )
+            except KeyError:
+                raise KeyError(f'Parameters x0, scale not provided in {params}')

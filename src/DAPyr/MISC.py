@@ -368,11 +368,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       Mu = (Vb @ C.T)
       
       # Compute pab
-      print((Va @ Mu.T).shape)
-      print(qa[:,np.newaxis].shape)
       
       pab = (Va @ Mu.T) * qa[:, np.newaxis]
-      print(pab.shape)
       
       # Remove imaginary and negative values
       pab[pab < 0] = 0
