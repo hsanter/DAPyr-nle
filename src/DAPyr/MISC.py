@@ -196,7 +196,7 @@ def kddm(x, xo, w):
     
     return xa
 
-def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0, plotW=False):
+def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0, plotW=False, alpha=0.0):
       rng = np.random.default_rng(58)
 
       N, M = data.shape
@@ -208,23 +208,32 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
           if denom > 0:
               vt[:, i] /= denom
    
-      # if doing knn approach
       # Compute pairwise distances
       dt_all = squareform(pdist(vt))
       srtd_idx = np.argsort(dt_all, axis=1)
       dt = np.take_along_axis(dt_all, srtd_idx[:, :knn], axis=1)
       nidx = srtd_idx[:, :knn]
-   
+
       chosen_bw = bw
       # Build weight matrix
       temp_w = np.exp(-(dt**2) / chosen_bw)
+
+      
       row_idx = np.repeat(np.arange(N), knn)
       W = csr_matrix((temp_w.ravel(), (row_idx, nidx.ravel())), shape=(N, N))
       W = (W.T).maximum(W)  # Symmetrize
       if klb > 0:
           W.data = np.where(W.data > klb, W.data, np.zeros_like(W.data))
    
+
+      q = np.array(W.sum(axis=1)).ravel() + 1e-16
+      if alpha != 0.0:
+            dq = diags(q**-alpha)
+            W = dq @ W @ dq
+
+          
       row_sum = np.array(W.sum(axis=1)).ravel()
+
    
       n_keep = len(keep_rows)
    
@@ -236,6 +245,7 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
    
       row_sum_keep = row_sum[keep_rows]
       W_keep = W[np.ix_(keep_rows, keep_rows)]
+      
       alpha_train = 1.0 / np.sqrt(row_sum_keep)
       # alpha_train = 1.0 / np.sqrt(row_sum)
       ld = diags(alpha_train)
@@ -269,7 +279,7 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       if len(valid_indices) == 1:
           valid_indices = np.array([0, 1])
    
-      return eig_vecs[:, valid_indices], eig_vals[valid_indices], alpha_train, chosen_bw, keep_rows
+      return eig_vecs[:, valid_indices], eig_vals[valid_indices], alpha_train, chosen_bw, keep_rows, DO
 
 
 def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
