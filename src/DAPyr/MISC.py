@@ -8,6 +8,10 @@ from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
 from scipy.stats import gaussian_kde
 from scipy.linalg import inv
 from scipy.io import loadmat
+from sklearn.neighbors import NearestNeighbors
+import scipy.sparse as sps
+import scipy.sparse.linalg as spsl
+from pydiffmap import diffusion_map as dm
 
 import warnings
 
@@ -278,8 +282,13 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       valid_indices = np.where(eig_vals > eigmin)[0]
       if len(valid_indices) == 1:
           valid_indices = np.array([0, 1])
+
+
+          
+      a_signs = np.where(eig_vecs[0] < 0, -1, 1)
+      eig_vecs *= a_signs
    
-      return eig_vecs[:, valid_indices], eig_vals[valid_indices], alpha_train, chosen_bw, keep_rows, DO
+      return eig_vecs[:, valid_indices], eig_vals[valid_indices], alpha_train, chosen_bw, keep_rows
 
 
 def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
@@ -331,6 +340,74 @@ def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
                               
       return Vnew
 
+def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_normalize=True):
+
+    def gaussian_k(d, bw):
+        return np.exp(-d**2 / bw)
+    
+    rng = np.random.default_rng(58)
+    N,M = data.shape
+    scaled_data = data.copy()
+    if f_normalize:
+        for i in range(M):
+            denom = np.max(np.abs(scaled_data[:, i]))
+            if denom > 0:
+                scaled_data[:, i] /= denom
+    sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
+    sknn.fit(scaled_data)
+    dists = sknn.kneighbors_graph(scaled_data, mode='distance')
+    K = dists.copy()
+    K.data = gaussian_k(dists.data, bw)
+    Ksym = (K.T).maximum(K)
+
+    # alpha normalization
+    q = np.array(K.sum(axis=1)).ravel()
+    right_norm_vec = np.power(q, -alpha)
+    m = right_norm_vec.shape[0]
+    Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
+    K_rn = Ksym @ Dalpha
+
+    # row normalization
+    if symmetric_row_normalize:
+        row_sum = K_rn.sum(axis=1).transpose()
+        inv_row_sum = np.power(row_sum, -0.5)
+        n = row_sum.shape[1]
+        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+        P = Dalpha @ K_rn @ Dalpha
+    else:
+        row_sum = K_rn.sum(axis=1).transpose()
+        inv_row_sum = np.power(row_sum, -1)
+        n = row_sum.shape[1]
+        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+        P = Dalpha * K_rn
+
+      
+    P = (P.T).maximum(P)  # Ensure symmetr
+    P = P + 1e-10 * np.eye(n)
+    
+    evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+
+    # Eigen decomposition
+    # v0 = rng.uniform(0, 1, n)
+    # try:
+    #     evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+    # except apnc as e:
+    #     evals = e.eigenvalues
+    #     evecs = e.eigenvectors
+    #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
+
+
+    # evals = np.real(evals)
+    # evecs = np.real(evecs)
+   
+    # evecs = (evecs.T[np.argsort(evals)][::-1]).T
+    # evals = evals[np.argsort(evals)][::-1]
+
+    ix = evals.argsort()[::-1][:]
+    evals = np.real(evals[ix])
+    evecs = np.real(evecs[:, ix])
+    return evecs, evals, inv_row_sum, bw, scaled_data
+ 
 
 def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
 
@@ -340,8 +417,13 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       b_cop = b.copy()
 
       # Get eigenvectors and eigenvalues of diffusion maps
-      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
-      Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
+      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
+      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
+      
+      # HMS TESTING 12/1
+      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=True, symmetric_row_normalize=False)
+      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=True, symmetric_row_normalize=False)
+      # HMS END TESTING 12/1
 
 
       a_signs = np.where(Va[0] < 0, -1, 1)
@@ -352,8 +434,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       x_emb = (Vb * Db).T
       y_emb = (Va * Da).T
 
-      a_cop = a_cop[keeps]
-      b_cop = b_cop[keeps]
+      # a_cop = a_cop[keeps]
+      # b_cop = b_cop[keeps]
 
       # TODO WHATS THIS FOR
       # for i in range(a_cop.shape[1]):
@@ -384,5 +466,63 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Remove imaginary and negative values
       pab[pab < 0] = 0
       pab = np.real(pab)
-      
+
       return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps
+
+
+def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
+
+
+      N = a.shape[0]
+      a_cop = a.copy()
+      b_cop = b.copy()
+
+      neighbor_params = {'n_jobs': -1, 'algorithm':'ball_tree'}
+
+      dm_a = dm.DiffusionMap.from_sklearn(n_evecs=Neig, k=knn, epsilon=bw, alpha=alpha, neighbor_params = neighbor_params)
+      dm_b = dm.DiffusionMap.from_sklearn(n_evecs=Neig, k=knn, epsilon=bw, alpha=alpha, neighbor_params = neighbor_params)
+
+      dm_a_f = dm_a.fit(a)
+      dm_b_f = dm_b.fit(b)
+
+      # Get eigenvectors and eigenvalues of diffusion maps
+      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
+      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
+
+
+      Va, Da = dm_a_f.evecs, dm_a_f.evals
+      Vb, Db = dm_a_f.evecs, dm_b_f.evals
+
+
+      # TODO make it so that diffusion coordinates from pydiffmap are also consistent by sign
+      # a_signs = np.where(Va[0] < 0, -1, 1)
+      # Va *= a_signs
+      # b_signs = np.where(Vb[0] < 0, -1, 1)
+      # Vb *= b_signs
+
+      # kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
+      kde = gaussian_kde(a_cop.T, bw_method='scott')
+      qa = kde(a_cop.T)
+
+      # Calculate kernel mean embeddings
+      N, M1 = Va.shape
+      N, M2 = Vb.shape
+      
+      Va *= Da
+      Vb *= Db
+
+      Cab = (Va.T @ Vb) / N
+      Cbb = (Vb.T @ Vb) / N
+
+      C = Cab @ inv(Cbb, overwrite_a=True)
+      Mu = (Vb @ C.T)
+      
+      # Compute pab
+      
+      pab = (Va @ Mu.T) * qa[:, np.newaxis]
+      
+      # Remove imaginary and negative values
+      pab[pab < 0] = 0
+      pab = np.real(pab)
+      
+      return pab, dm_b, dm_a

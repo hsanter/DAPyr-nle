@@ -110,8 +110,6 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
         Array of size Ny x Ne containing the ensemble members projected into obs-space
     Y : np.ndarray
         Array of size Ny x 1 containing the observations at time T
-    var_y : float
-        Observation variance
     H : np.ndarray
         Array of size Ny x Nx representing the measurement operator
     C_pf : np.ndarray

@@ -1295,13 +1295,14 @@ def runDA(expt: Expt, maxT : int = None):
                                     # print(f'doing nle at time {t}')
 
                                     pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
-
                                     pab += 1e-40
 
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
                                           expt.x_train = x_train.copy()
                                           expt.y_train = y_train.copy()
+                                    # plot_pab(expt, plot_states=True)
+                                    # raise SystemExit
 
                               # compute particle weights outside of particle filter
 
@@ -1312,6 +1313,9 @@ def runDA(expt: Expt, maxT : int = None):
                               y_emb = (evec_y * eval_y).T
 
                               wo = np.zeros((Ny, Ne))
+
+                              a_train_x = np.asarray(a_train_x).squeeze()
+                              a_train_y = np.asarray(a_train_y).squeeze()
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
