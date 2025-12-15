@@ -8,6 +8,7 @@ from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
 from scipy.stats import gaussian_kde
 from scipy.linalg import inv
 from scipy.io import loadmat
+from scipy.special import logsumexp
 from sklearn.neighbors import NearestNeighbors
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsl
@@ -340,6 +341,49 @@ def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
                               
       return Vnew
 
+def choose_optimal_epsilon_BGH(scaled_distsq, epsilons=None):
+    """
+    Calculates the optimal epsilon for kernel density estimation according to
+    the criteria in Berry, Giannakis, and Harlim.
+
+    Parameters
+    ----------
+    scaled_distsq : numpy array
+        Values for scaled distance squared values, in no particular order or shape. (This is the exponent in the Gaussian Kernel, aka the thing that gets divided by epsilon).
+    epsilons : array-like, optional
+        Values of epsilon from which to choose the optimum.  If not provided, uses all powers of 2. from 2^-40 to 2^40
+
+    Returns
+    -------
+    epsilon : float
+        Estimated value of the optimal length-scale parameter.
+    d : int
+        Estimated dimensionality of the system.
+
+    Notes
+    -----
+    This code explicitly assumes the kernel is gaussian, for now.
+
+    References
+    ----------
+    The algorithm given is based on [1]_.  If you use this code, please cite them.
+
+    .. [1] T. Berry, D. Giannakis, and J. Harlim, Physical Review E 91, 032915
+       (2015).
+    """
+    if epsilons is None:
+        epsilons = 2**np.arange(-40., 41., 1.)
+
+    epsilons = np.sort(epsilons).astype('float')
+    log_T = [logsumexp(-scaled_distsq/(eps)) for eps in epsilons]
+    log_eps = np.log(epsilons)
+    log_deriv = np.diff(log_T)/np.diff(log_eps)
+    max_loc = np.argmax(log_deriv)
+    # epsilon = np.max([np.exp(log_eps[max_loc]), np.exp(log_eps[max_loc+1])])
+    epsilon = np.exp(log_eps[max_loc])
+    d = np.round(2.*log_deriv[max_loc])
+    return epsilon, d
+
 def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_normalize=True):
 
     def gaussian_k(d, bw):
@@ -351,12 +395,21 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
     if f_normalize:
         for i in range(M):
             denom = np.max(np.abs(scaled_data[:, i]))
+            print(denom)
             if denom > 0:
                 scaled_data[:, i] /= denom
     sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
     sknn.fit(scaled_data)
     dists = sknn.kneighbors_graph(scaled_data, mode='distance')
+    
     K = dists.copy()
+
+    if bw=='adaptive':
+          bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
+          # bw *= 2
+
+    print(bw)
+    
     K.data = gaussian_k(dists.data, bw)
     Ksym = (K.T).maximum(K)
 
@@ -382,7 +435,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
         P = Dalpha * K_rn
 
       
-    P = (P.T).maximum(P)  # Ensure symmetr
+    # P = (P.T).maximum(P)  # Ensure symmetr
     P = P + 1e-10 * np.eye(n)
     
     evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
@@ -421,8 +474,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=True, symmetric_row_normalize=False)
-      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=True, symmetric_row_normalize=False)
+      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=False, symmetric_row_normalize=False)
+      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=False, symmetric_row_normalize=False)
       # HMS END TESTING 12/1
 
 
