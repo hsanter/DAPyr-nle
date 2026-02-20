@@ -34,7 +34,7 @@ def create_periodic(sigma, m, dx):
       else: #Odd
             cx = np.floor(m/2)
             x = np.concatenate([np.arange(0, cx+1), np.arange(cx, 0, -1), np.arange(0, cx+1), np.arange(cx, 0, -1)])
-      wlc = np.exp(-((dx*(x))**2)/(2*sigma*2))
+      wlc = np.exp(-((dx*(x))**2)/(2*sigma**2))
       B = np.zeros((m, m))
       for i in range(m):
             B[i, :] = wlc[m - i:2*m - i]
