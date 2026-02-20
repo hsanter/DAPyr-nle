@@ -1,6 +1,14 @@
 import numpy as np
 from scipy.special import erf
 from scipy.interpolate import interp1d
+from scipy.spatial.distance import pdist, squareform, cdist
+from scipy.sparse import csr_matrix, diags
+from scipy.sparse.linalg import eigs, eigsh
+from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
+from scipy.stats import gaussian_kde
+from scipy.linalg import inv
+from scipy.io import loadmat
+
 import warnings
 
 def calc_SV(xa, xf):
@@ -187,3 +195,181 @@ def kddm(x, xo, w):
         warnings.warn("NaN values detected in qf")
     
     return xa
+
+def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0, plotW=False):
+      rng = np.random.default_rng(58)
+
+      N, M = data.shape
+
+      # Feature-wise scaling
+      vt = data.copy()
+      for i in range(M):
+          denom = np.max(np.abs(vt[:, i]))
+          if denom > 0:
+              vt[:, i] /= denom
+   
+      # if doing knn approach
+      # Compute pairwise distances
+      dt_all = squareform(pdist(vt))
+      srtd_idx = np.argsort(dt_all, axis=1)
+      dt = np.take_along_axis(dt_all, srtd_idx[:, :knn], axis=1)
+      nidx = srtd_idx[:, :knn]
+   
+      chosen_bw = bw
+      # Build weight matrix
+      temp_w = np.exp(-(dt**2) / chosen_bw)
+      row_idx = np.repeat(np.arange(N), knn)
+      W = csr_matrix((temp_w.ravel(), (row_idx, nidx.ravel())), shape=(N, N))
+      W = (W.T).maximum(W)  # Symmetrize
+      if klb > 0:
+          W.data = np.where(W.data > klb, W.data, np.zeros_like(W.data))
+   
+      row_sum = np.array(W.sum(axis=1)).ravel()
+   
+      n_keep = len(keep_rows)
+   
+      # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
+      if n_keep == 0:
+          n_keep = np.ceil(N * train_frac).astype('int')
+          keep_rows = np.sort(np.argpartition(row_sum, n_keep-1)[:n_keep])
+
+   
+      row_sum_keep = row_sum[keep_rows]
+      W_keep = W[np.ix_(keep_rows, keep_rows)]
+      alpha_train = 1.0 / np.sqrt(row_sum_keep)
+      # alpha_train = 1.0 / np.sqrt(row_sum)
+      ld = diags(alpha_train)
+   
+      # Diffusion operator
+      DO = ld @ W_keep @ ld
+      # DO = ld @ W @ ld
+      # print(DO.sum(axis=1))
+      DO = (DO.T).maximum(DO)  # Ensure symmetr
+      DO = DO + 1e-10 * np.eye(n_keep)
+
+      # Eigen decomposition
+      v0 = rng.uniform(0, 1, n_keep)
+      try:
+          eig_vals, eig_vecs = eigsh(DO, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+      except apnc as e:
+          eig_vals = e.eigenvalues
+          eig_vecs = e.eigenvectors
+          print(f'Only found {len(eig_vals)} out of {Neig + 1} eigenvectors')
+
+   
+      eig_vals = np.real(eig_vals)
+      eig_vecs = np.real(eig_vecs)
+   
+      eig_vecs = (eig_vecs.T[np.argsort(eig_vals)][::-1]).T
+      eig_vals = eig_vals[np.argsort(eig_vals)][::-1]
+
+   
+      # Filter eigenvalues
+      valid_indices = np.where(eig_vals > eigmin)[0]
+      if len(valid_indices) == 1:
+          valid_indices = np.array([0, 1])
+   
+      return eig_vecs[:, valid_indices], eig_vals[valid_indices], alpha_train, chosen_bw, keep_rows
+
+
+def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
+
+
+      N, M = Xtrain.shape
+      N2 = Xnew.shape[0]
+      
+      Ndims = np.ndim(Xnew)
+      if Ndims == 1:
+            Xnew = np.expand_dims(Xnew, axis=0)  # Add a new first dimension
+            
+      Xtrain_scaled = Xtrain.copy()
+      Xnew_scaled = Xnew.copy()
+      
+      Xtrain_scaled[:, :Ns] = Xtrain_scaled[:, :Ns] / Ns
+      Xnew_scaled[:, :Ns] = Xnew_scaled[:, :Ns] / Ns
+            
+            
+      for j in range(M):
+            denom = np.max(np.abs(Xtrain[:, j]))
+            if denom > 0:
+                  Xtrain_scaled[:, j] /= denom
+                  Xnew_scaled[:, j] /= denom
+                        
+                        
+      dist_mat = cdist(Xnew_scaled, Xtrain_scaled)
+      sorted_idx = np.argsort(dist_mat, axis=1)
+      knn = min(knn, N)
+                        
+      W_yi = np.zeros((N2, N))
+      for iNew in range(N2):
+            nbrs = sorted_idx[iNew, :knn]
+            dist_sub = dist_mat[iNew, nbrs]
+            W_yi[iNew, nbrs] = np.exp(-dist_sub**2 / chosenBw)
+                              
+      row_sum_new = W_yi @ (alphaTrain**2)
+      alphaNew = 1.0 / np.sqrt(row_sum_new)
+                              
+      T = W_yi * alphaTrain.T
+      
+      T *= alphaNew
+      # T *= alphaNew[:, np.newaxis]
+      
+      Vnew = T @ V
+      Vnew /= D
+      
+      Vnew *= np.mean(alphaTrain)
+                              
+      return Vnew
+
+
+def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
+
+
+      N = a.shape[0]
+      a_cop = a.copy()
+      b_cop = b.copy()
+
+      # Get eigenvectors and eigenvalues of diffusion maps
+      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
+      Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
+
+
+      a_signs = np.where(Va[0] < 0, -1, 1)
+      Va *= a_signs
+      b_signs = np.where(Vb[0] < 0, -1, 1)
+      Vb *= b_signs
+
+      x_emb = (Vb * Db).T
+      y_emb = (Va * Da).T
+
+      a_cop = a_cop[keeps]
+      b_cop = b_cop[keeps]
+
+      for i in range(a_cop.shape[1]):
+          # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
+          a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
+
+      kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
+      qa = kde(a_cop.T)
+
+      # Calculate kernel mean embeddings
+      N, M1 = Va.shape
+      N, M2 = Vb.shape
+      
+      Va *= Da
+      Vb *= Db
+
+      Cab = (Va.T @ Vb) / N
+      Cbb = (Vb.T @ Vb) / N
+
+      C = Cab @ inv(Cbb, overwrite_a=True)
+      Mu = (Vb @ C.T)
+      
+      # Compute pab
+      pab = (Va @ Mu.T) * qa[:, np.newaxis]
+      
+      # Remove imaginary and negative values
+      pab[pab < 0] = 0
+      pab = np.real(pab)
+      
+      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps

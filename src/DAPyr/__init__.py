@@ -21,6 +21,7 @@ import warnings
 
 from importlib import reload
 reload(OBS_ERRORS)
+reload(MISC)
 reload(DA)
 
 class Expt:
@@ -242,7 +243,16 @@ class Expt:
             self.states['xt'] = xt
             self.states['Y'] = Y
 
+
             #Initialize Variables for storage
+
+            Ny = self.getParam('Ny')
+            Nb = self.getParam('Nb')
+            Ns = 1 + 2*Nb
+            Nl = self.getParam('Nl')
+            T_train = self.getParam('T_train')
+            tof = self.getParam('tof')
+
 
             if self.getParam('saveEns') != 0:
                   self.x_ens = np.zeros((Nx, Ne, T))*np.nan #All Ensemble Members over time period
@@ -250,6 +260,10 @@ class Expt:
                   self.x_fore_ens = np.zeros((Nx, Ne, T))
             if self.getParam('saveEnsMean') != 0:
                   self.x_ensmean = np.zeros((Nx, T))*np.nan
+            if self.getParam('save_keest_pab') != 0:
+                  self.keest_pab = np.zeros((T_train * Ny // tof, T_train * Ny // tof))*np.nan
+                  self.x_train = np.zeros((Ns, T_train * Ny//tof))
+                  self.y_train = np.zeros((Nl, T_train * Ny//tof))
 
             self.rmse = np.zeros((T,)) #RMSE of Expt
             self.rmse_prior = np.zeros((T,))
@@ -297,6 +311,21 @@ class Expt:
             self.obsParams['assumed_obs_err_dist'] = 0
             self.obsParams['assumed_obs_err_params'] = default_gaussian_params
 
+            #Kernel Embeddings Likelihood Estimation Parameters
+            # self.obsParams['do_keest'] = 0
+            self.obsParams['nle_type'] = 2
+            self.obsParams['nle_every'] = 1
+            self.obsParams['Neig'] = 30
+            self.obsParams['knn_frac'] = 0.05
+            self.obsParams['bw_dm'] = 0.05
+            self.obsParams['bw_kde'] = -999
+            self.obsParams['T_train'] = 50
+            self.obsParams['tof'] = 1
+            self.obsParams['Nl'] = 1
+            self.obsParams['Nb'] = 0
+            self.obsParams['klb'] = 0.0
+            self.obsParams['debug_nle_noda'] = False
+
             #Parameters related to observation quality control
             self.obsParams['qc_flag'] = 0
       def _initModel(self):
@@ -314,6 +343,8 @@ class Expt:
             self.miscParams['saveEns'] = 0
             self.miscParams['saveEnsMean'] = 1
             self.miscParams['saveForecastEns'] = 0
+            self.miscParams['save_keest_pab'] = 0
+
 
             #Default Singular Vector Parameters
             self.miscParams['doSV'] = 0 #0 for false, 1 for true
@@ -323,6 +354,7 @@ class Expt:
             self.miscParams['storeCovar']= 0 #Store the covariances 
 
             self.miscParams['numPool'] = 8
+            self.miscParams['debug_nle_noDA'] = False
 
       def resetParams(self):
             '''Reset all Expt parameters to their default values.'''
@@ -925,7 +957,72 @@ def plotExpt(expt: Expt, T: int, ax = None, plotObs = False, plotEns = True, plo
             return fig, ax
       else:
             return ax
+
+def plot_pab(expt: Expt, ax = None, plot_states=False, pab_sample_states=-999):
+
+      if expt.getParam('save_keest_pab') == 0:
+            raise ValueError('No likelihood estimate information saved. Be sure that save_keest_pab is set to true.')
+
+      if ax is None:
+            fig, ax = plt.subplots(1, 1)
+
+      x_train = expt.x_train
+      y_train = expt.y_train
+
+
+      pab = expt.keest_pab
+            
       
+      ys = np.sort(y_train[0, :])
+      ind2 = np.argsort(y_train[0, :])
+      diff = np.diff(ys)
+
+      fig = plt.figure(31)
+      plt.clf()
+      cmap = plt.get_cmap('tab20')
+
+      htp = []
+
+      if pab_sample_states == -999:
+            states = np.quantile(x_train, [0.1, 0.25, 0.5, 0.75, 0.9])
+      else:
+            states = pab_sample_states
+
+      for ind, j in enumerate(states):
+            dum = np.abs(j - x_train[0, :])
+            ind1 = np.argsort(dum)[0]
+
+            h = pab[ind2, ind1]
+
+            # Normalize for plotting
+            normalization = np.sum((h[:-1] + h[1:]) * diff / 2)
+            h_norm = h / normalization
+            htp.append(h_norm)
+
+            # Plotting
+            ax.plot(ys, h_norm, linewidth=2, color=cmap(ind))
+            if plot_states:
+                  ax.axvline(x=j, color=cmap(ind), linestyle='dotted', label=f'x={j}')
+
+      bound = max(np.abs(np.min(x_train)), np.abs(np.max(x_train)))
+      ax.set_xlim([-bound, bound])
+      ax.set_ylim([0, np.max(htp)])
+      ax.legend()
+
+      ax.set_title(f'Conditional Likelihood Estimates for Experiment {expt.exptname}')
+
+      if expt.getParam('nle_type') < 4:
+            ax.set_xlabel('$\epsilon$')
+            ax.set_ylabel('$p(\epsilon | x)$')
+      else:
+            ax.set_xlabel('$y$')
+            ax.set_ylabel('$p(y | x)$')
+
+
+      if ax is None:
+            return fig, ax
+      else:
+            return ax
 
 #TODO Add plotting funcitonality for Rank Histogram
 
@@ -995,6 +1092,21 @@ def runDA(expt: Expt, maxT : int = None):
       var_infs = expt.getParam('var_infs')
       var_infs_y = expt.getParam('var_infs_y')
 
+      # Nonparametric Likelihood Estimation Parameters
+      nle_type = expt.getParam('nle_type')
+      nle_every = expt.getParam('nle_every')
+      Neig = expt.getParam('Neig')
+      knn_frac = expt.getParam('knn_frac')
+      bw_dm = expt.getParam('bw_dm')
+      bw_kde = expt.getParam('bw_kde')
+      T_train = expt.getParam('T_train')
+      tof = expt.getParam('tof')
+      Nl = expt.getParam('Nl')
+      Nb = expt.getParam('Nb')
+      klb = expt.getParam('klb')
+      train_frac = 1.0
+      debug_nle_noDA = expt.getParam('debug_nle_noDA')
+
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
       qc_flag = expt.getParam('qc_flag')
@@ -1012,6 +1124,7 @@ def runDA(expt: Expt, maxT : int = None):
       rmse_prior = expt.rmse_prior
       spread = expt.spread
 
+      save_keest_pab = expt.getParam('save_keest_pab')
       if saveEns:
             x_ens = expt.x_ens
       if saveEnsMean:
@@ -1032,12 +1145,14 @@ def runDA(expt: Expt, maxT : int = None):
             if 'sigma' in assumed_obs_err_params:
                   var_y = assumed_obs_err_params['sigma'] ** 2
             else:
-                  raise KeyError(f'Obs QAQC turned on but no observation error standard deviation provided in assumed_obs_err_params: {assumed_obs_err_params}')
-            
+                  raise KeyError(f'Obs QAQC turned on but no observation error standard deviation provided in prescribed_obs_err_params: {prescribed_obs_err_params}')
 
       #Open pool      
       #TODO Add exception handling in case function fails, 
       # make sure all the resources are released!
+
+      rng = np.random.default_rng(58)
+
       pool = mp.get_context('fork').Pool(numPool)
       pfunc = partial(MODELS.model, dt = dt, T = tau, funcptr = funcptr)
 
@@ -1070,6 +1185,23 @@ def runDA(expt: Expt, maxT : int = None):
                                             'Xf': (['t', 'Nx','mem'], np.zeros((sv_t, Nx, Ne))*np.nan)}
             svpfunc = partial(MODELS.model, dt = dt, T = forecastSV, funcptr = funcptr)
 
+      # set up bookkeeping stuff for kernel embeddings NLE
+      knn = int(np.ceil(knn_frac * Ny * T_train))
+      Ns = 1 + 2 * Nb
+      x_train = np.zeros((Ns, T_train * Ny//tof))
+      y_train = np.zeros((Nl, T_train * Ny//tof))
+
+      if expt_flag == 3:
+            Hi = np.zeros((Ny, Ns, Nx))
+
+            for k in range(Ny):
+                  ind = np.where(H[k,:] == 1)[0][0]
+                  inds = np.arange(ind - Nb, ind + Nb + 1)
+                  inds[inds < 0] += Nx
+                  inds[inds >= Nx] -= Nx
+                  for l in range(Ns):
+                        Hi[k, l, inds[l]] = 1
+
       # Time Loop
       xf_0, xt, Y = expt.getStates()
       xf = copy.deepcopy(xf_0)
@@ -1078,6 +1210,12 @@ def runDA(expt: Expt, maxT : int = None):
       L = OBS_ERRORS.get_likelihood(assumed_obs_err_dist, assumed_obs_err_params)
 
       for t in range(T):
+
+
+            if t % 50 == 0:
+                  print(f'DB: Starting cycle {t}')
+
+
             #Observation
             xm = np.mean(xf, axis = -1)[:, np.newaxis]
             rmse_prior[t] = np.sqrt(np.mean((xt[:, t] - xm[:, 0])**2))
@@ -1116,10 +1254,168 @@ def runDA(expt: Expt, maxT : int = None):
                         xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                   case 2: # Nothing
                         xa = xf
+                  case 3: # LPF using kernel embeddings
+                        if t < T_train:
+                              if debug_nle_noDA:
+                                    xa = xf
+                              else:
+                                    xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                              ts = t * Ny // tof
+                              te = ts + Ny // tof
+                              s = 0 # sample # from this cycle
+
+                              for k in range(0, Ny, tof):
+                                    
+                                    Htemp = Hi[k,:,:].squeeze()
+                                    s = s+1
+                                    # 2: p(e|xt)
+                                    # 3: p(e|xa)
+                                    # 4: p(y|xt)
+                                    # 5: p(y|xa)
+                                    if nle_type == 2 or nle_type == 4:
+                                          x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
+                                    elif nle_type == 3 or nle_type == 5:
+                                          choose_mem = rng.integers(0,Ne)
+                                          random_member = xa[:,choose_mem]
+                                          x_train[:Ns,ts+s-1] = Htemp @ random_member
+                                          
+                                          
+                              if nle_type == 4 or nle_type == 5:
+                                    y_train[:Nl,ts:te] = Y[0::tof,t,:].T
+                              else:
+                                    # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
+                                    y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
+                        else:
+
+                              hxb_nbrs = np.zeros((Ns, Ne, Ny))
+
+                              for n in range(Ne):
+                                  # State
+                                  for k in range(Ny):
+                                      Htemp = np.squeeze(Hi[k, :, :])  # Equivalent to squeeze(Hi(k,:,:))
+                                      if Ns == 1:
+                                          Htemp = Htemp.T  # Transpose if Ns == 1
+                                      hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
+                              hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
+
+                              if (t - T_train) % nle_every == 0:
+                              
+
+                                    # print(f'doing nle at time {t}')
+
+                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+
+                                    pab += 1e-40
+
+                                    if save_keest_pab != 0:
+                                          expt.keest_pab = pab.copy()
+                                          expt.x_train = x_train.copy()
+                                          expt.y_train = y_train.copy()
+
+                              # compute particle weights outside of particle filter
+
+                              Nxy = hxb_nbrs.shape[0]  # Equivalent to length(hx[:,0,0]) in MATLAB
+                              evec_x, eval_x, a_train_x, bwx = x_map
+                              evec_y, eval_y, a_train_y, bwy = y_map
+                              x_emb = (evec_x * eval_x).T
+                              y_emb = (evec_y * eval_y).T
+
+                              wo = np.zeros((Ny, Ne))
+
+                              for k in range(Ny):
+                                    if nle_type >= 4 :
+                                          obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          obs_emb *= eval_y
+                                          ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
+                                    for n in range(Ne):
+                                          if nle_type < 4:
+                                                obs_emb = MISC.diff_map_ext_nystrom(
+                                    # y_train[ts:te] = Y[t,0::tof]
+                                                      (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
+                                                      y_train.T,
+                                                      evec_y,
+                                                      eval_y,
+                                                      a_train_y,
+                                                      bwy,
+                                                      knn,
+                                                      1,
+                                                )
+                                                obs_emb *= eval_y  # Element-wise multiplication along columns
+                                                ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
+                                          # Find nearest state on manifold
+                                          state_emb = MISC.diff_map_ext_nystrom(
+                                                hxb_nbrs[:, k, n].reshape(1, -1),
+                                                x_train.T,
+                                                evec_x,
+                                                eval_x,
+                                                a_train_x,
+                                                bwx,
+                                                knn,
+                                                Ns,
+                                          )
+                                          state_emb *= eval_x  # Element-wise multiplication along columns
+                                          ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
+                                          wo[k,n] = pab[ind2, ind1]
+                                    # sum of normalized likelihoods for a given observation equals one
+                                    wo[k, :] /= np.sum(wo[k, :])
+
+                              # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
+
+                              if debug_nle_noDA:
+                                    xa = xf
+                              else:
+                                    xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+
+
+
+                              # augment new data onto x_train and y_train
+                              # TODO - play with looking at x train and y train before and after doing this and make sure you grok it all
+                              l = 0
+                              hxtemp = np.zeros((Ns, Ny // tof))
+
+                              
+                              for j in range(0, Ny, tof):
+                                    l += 1
+                                    Htemp = Hi[j, :, :].squeeze()
+                                    if Ns == 1:
+                                          Htemp = Htemp.T
+
+                                    # Use truth or random sample from posterior
+                                    if nle_type in [2, 4]:
+                                          hxtemp[:, l - 1] = Htemp @ xt[:,t]
+                                    else:
+                                          random_member = rng.integers(0,Ne)
+                                          hxtemp[:, l - 1] = hxb_nbrs[:, j, random_member]
+
+                                  # Replace randomly-selected past data with new data
+                              ind = np.arange(0,T_train*Ny)
+                              rng.shuffle(ind)
+
+                                    # y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
+
+                              xtrinit = x_train.copy()
+                              ytrinit = y_train.copy()
+                              l = 0
+                              for j in range(0, Ny, tof):
+                                    l += 1
+                                    x_train[:, ind[l - 1]] = hxtemp[:, l - 1]
+                                    if nle_type in [4,5]:
+                                          y_train[:Nl, ind[l - 1]] = Y[j, t,:]
+                                    else:
+                                          y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
+
+                        #        populate the next entries of x_train and y_train
+                        #        do normal LPF (see case 1)
+                        # else, 
+                        #        do estimation of p(whatever|whatever) (according to nle_type)
+                        #        do LPF with keest-estimated likelihoods
+                        #        replace a random element of the training dataset with this cycle's sample
+                        
 
             if e_flag != 0:
                   pool.close()
                   expt.modExpt({'status': 'run DA error'})
+                  print(expt.getParam('status'))
                   return expt.getParam('status')
             
             #TODO Add parameter that controls how often statistics are stored
