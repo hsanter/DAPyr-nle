@@ -314,6 +314,7 @@ class Expt:
             #Kernel Embeddings Likelihood Estimation Parameters
             # self.obsParams['do_keest'] = 0
             self.obsParams['nle_type'] = 2
+            self.obsParams['nle_every'] = 1
             self.obsParams['Neig'] = 30
             self.obsParams['knn_frac'] = 0.05
             self.obsParams['bw_dm'] = 0.05
@@ -1174,6 +1175,7 @@ def runDA(expt: Expt, maxT : int = None):
 
       # Nonparametric Likelihood Estimation Parameters
       nle_type = expt.getParam('nle_type')
+      nle_every = expt.getParam('nle_every')
       Neig = expt.getParam('Neig')
       knn_frac = expt.getParam('knn_frac')
       bw_dm = expt.getParam('bw_dm')
@@ -1291,7 +1293,7 @@ def runDA(expt: Expt, maxT : int = None):
       for t in range(T):
 
 
-            if t % 100 == 0:
+            if t % 50 == 0:
                   print(f'DB: Starting cycle {t}')
 
 
@@ -1366,16 +1368,6 @@ def runDA(expt: Expt, maxT : int = None):
                                     y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
 
-      
-                              pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
-
-                              pab += 1e-40
-
-                              if save_keest_pab != 0:
-                                    expt.keest_pab = pab.copy()
-                                    expt.x_train = x_train.copy()
-                                    expt.y_train = y_train.copy()
-
                               hxb_nbrs = np.zeros((Ns, Ne, Ny))
 
                               for n in range(Ne):
@@ -1387,6 +1379,19 @@ def runDA(expt: Expt, maxT : int = None):
                                       hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
 
+                              if (t - T_train) % nle_every == 0:
+                              
+
+                                    # print(f'doing nle at time {t}')
+
+                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+
+                                    pab += 1e-40
+
+                                    if save_keest_pab != 0:
+                                          expt.keest_pab = pab.copy()
+                                          expt.x_train = x_train.copy()
+                                          expt.y_train = y_train.copy()
 
                               # compute particle weights outside of particle filter
 
