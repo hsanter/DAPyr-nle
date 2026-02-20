@@ -7,6 +7,7 @@ from scipy.sparse.linalg import eigs, eigsh
 from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
 from scipy.stats import gaussian_kde
 from scipy.linalg import inv
+from scipy.io import loadmat
 
 import warnings
 
