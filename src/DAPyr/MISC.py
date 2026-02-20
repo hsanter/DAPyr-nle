@@ -1,6 +1,13 @@
 import numpy as np
 from scipy.special import erf
 from scipy.interpolate import interp1d
+from scipy.spatial.distance import pdist, squareform, cdist
+from scipy.sparse import csr_matrix, diags
+from scipy.sparse.linalg import eigs, eigsh
+from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
+from scipy.stats import gaussian_kde
+from scipy.linalg import inv
+
 import warnings
 
 def calc_SV(xa, xf):
@@ -187,3 +194,4 @@ def kddm(x, xo, w):
         warnings.warn("NaN values detected in qf")
     
     return xa
+
