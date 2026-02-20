@@ -395,7 +395,6 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
     if f_normalize:
         for i in range(M):
             denom = np.max(np.abs(scaled_data[:, i]))
-            print(denom)
             if denom > 0:
                 scaled_data[:, i] /= denom
     sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
@@ -406,9 +405,8 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
 
     if bw=='adaptive':
           bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
-          # bw *= 2
-
-    print(bw)
+          bw *= 2
+          print(bw)
     
     K.data = gaussian_k(dists.data, bw)
     Ksym = (K.T).maximum(K)
@@ -474,8 +472,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=False, symmetric_row_normalize=False)
-      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=False, symmetric_row_normalize=False)
+      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 
@@ -569,7 +567,7 @@ def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
 
       C = Cab @ inv(Cbb, overwrite_a=True)
       Mu = (Vb @ C.T)
-      
+     
       # Compute pab
       
       pab = (Va @ Mu.T) * qa[:, np.newaxis]
