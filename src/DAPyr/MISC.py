@@ -406,7 +406,6 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
     if bw=='adaptive':
           bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
           bw *= 2
-          print(bw)
     
     K.data = gaussian_k(dists.data, bw)
     Ksym = (K.T).maximum(K)
@@ -518,7 +517,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       pab[pab < 0] = 0
       pab = np.real(pab)
 
-      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps
+      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps, C, kde
 
 
 def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):

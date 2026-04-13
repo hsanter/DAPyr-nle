@@ -302,7 +302,6 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
       
       if np.any(np.isnan(wo)):
             e_flag = 1
-            print('oh?')
             return np.nan, e_flag
 
       beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y, beta_max)
@@ -415,7 +414,6 @@ def lpf_update_kecd_y(x : np.ndarray, hx : np.ndarray,
       
       if np.any(np.isnan(wo)):
             e_flag = 1
-            print('oh?')
             return np.nan, e_flag
 
       beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y, beta_max)

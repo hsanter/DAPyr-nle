@@ -1208,7 +1208,7 @@ def runDA(expt: Expt, maxT : int = None):
       for t in range(T):
 
 
-            if t % 100 == 0:
+            if t % 2 == 0:
                   print(f'DB: Starting cycle {t}')
 
 
@@ -1294,7 +1294,7 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     # print(f'doing nle at time {t}')
 
-                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+                                    pab, x_map, y_map, keep_rows, cov_embedding, y_kde = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
                                     pab += 1e-40
 
                                     if save_keest_pab != 0:
@@ -1313,13 +1313,17 @@ def runDA(expt: Expt, maxT : int = None):
                               y_emb = (evec_y * eval_y).T
 
                               wo = np.zeros((Ny, Ne))
+                              wo2 = np.zeros((Ny, Ne))
 
                               a_train_x = np.asarray(a_train_x).squeeze()
                               a_train_y = np.asarray(a_train_y).squeeze()
 
+                              test_compute_pyx_directly = True
+
                               for k in range(Ny):
                                     if nle_type >= 4 :
                                           obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          V_new_obs = obs_emb
                                           obs_emb *= eval_y
                                           ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                     for n in range(Ne):
@@ -1348,17 +1352,28 @@ def runDA(expt: Expt, maxT : int = None):
                                                 knn,
                                                 Ns,
                                           )
+                                          V_new_state = state_emb
                                           state_emb *= eval_x  # Element-wise multiplication along columns
                                           ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
                                           wo[k,n] = pab[ind2, ind1]
+                                          if test_compute_pyx_directly:
+                                                wo2[k,n] = (V_new_obs @ cov_embedding @ V_new_state.T) * y_kde(Y[k,t,:])
+                                                if wo2[k,n] < 0: wo2[k,n] = 0
+                                                wo2[k,n] = np.real(wo2[k,n]) + 1e-40
+                                                
+
                                     # sum of normalized likelihoods for a given observation equals one
                                     wo[k, :] /= np.sum(wo[k, :])
+                                    wo2[k, :] /= np.sum(wo2[k, :])
+                                    if test_compute_pyx_directly:
+                                          wo = wo2
 
                               # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
 
                               if debug_nle_noDA:
                                     xa = xf
                               else:
+                                    print('about to start lpf')
                                     xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
 
 
