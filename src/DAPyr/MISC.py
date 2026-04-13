@@ -295,6 +295,14 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
 def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
 
 
+      # print(Xnew)
+      # print(Xtrain)
+      # print(V)
+      # print(D)
+      # print(alphaTrain)
+      # print(chosenBw)
+      # print(knn)
+      # print(Ns)
       N, M = Xtrain.shape
       N2 = Xnew.shape[0]
       
