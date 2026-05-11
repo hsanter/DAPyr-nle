@@ -1210,7 +1210,7 @@ def runDA(expt: Expt, maxT : int = None):
       for t in range(T):
 
 
-            if t % 50 == 0:
+            if t % 100 == 0:
                   print(f'DB: Starting cycle {t}')
 
 
@@ -1296,8 +1296,13 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     # print(f'doing nle at time {t}')
 
+                                    np.savez('rkhs_input.npz',
+                                             x_train=x_train,
+                                             y_train=y_train)
+
                                     pab, x_map, y_map, keep_rows, cov_embedding, y_kde = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
                                     pab += 1e-40
+
 
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
@@ -1311,6 +1316,31 @@ def runDA(expt: Expt, maxT : int = None):
                               Nxy = hxb_nbrs.shape[0]  # Equivalent to length(hx[:,0,0]) in MATLAB
                               evec_x, eval_x, a_train_x, bwx = x_map
                               evec_y, eval_y, a_train_y, bwy = y_map
+
+                              # if t == 100:
+                              #       np.savez(f'rsfp_maps_{t}.npz',
+                              #                pab=pab,
+                              #                x_train = x_train,
+                              #                y_train = y_train,
+                              #                evec_x = evec_x,
+                              #                eval_x = eval_x,
+                              #                a_train_x = a_train_x,
+                              #                evec_y = evec_y,
+                              #                eval_y = eval_y,
+                              #                a_train_y = a_train_y,
+                              #                cov_embedding = cov_embedding,
+                              #                knn=knn,
+                              #                bwx=bwx,
+                              #                bwy=bwy)
+                              #       with open(f'rsfp_kde_{t}.pkl', 'wb') as f:
+                              #             pickle.dump(y_kde, f)
+
+                              # if t == 110 or t == 120 or t == 130:
+                              #       np.savez(f'rsfp_test_data_{t}.npz',
+                              #                hxb_nbrs = hxb_nbrs,
+                              #                Y=Y)
+                              
+                              
                               x_emb = (evec_x * eval_x).T
                               y_emb = (evec_y * eval_y).T
 
@@ -1322,7 +1352,7 @@ def runDA(expt: Expt, maxT : int = None):
                               a_train_y = np.asarray(a_train_y).squeeze()
 
                               if compute_pyx_directly:
-                                    print('computing directly!')
+                                    # print('computing directly!')
                                     V_new_obs = np.zeros((Ny, Neig+1))
                                     V_new_state = np.zeros((Ny, Ne, Neig+1))
                                     new_obs_kde = np.zeros(Ny)
@@ -1366,7 +1396,6 @@ def runDA(expt: Expt, maxT : int = None):
                                     #             wo2[k,n] = np.real(wo2[k,n]) + 1e-40
                                     #       wo2[k, :] /= np.sum(wo2[k, :])
                                                 
-                                    np.save('wo2.npy', wo2)
                                     wo = wo2
                               # if compute_pyx_directly:
                               else:
@@ -1408,31 +1437,15 @@ def runDA(expt: Expt, maxT : int = None):
                                                 state_emb *= eval_x  # Element-wise multiplication along columns
                                                 ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
                                                 wo[k,n] = pab[ind2, ind1]
-                                                if compute_pyx_directly:
-
-                                                      if k == 0 and n == 0:
-                                                            print('good')
-                                                            print(V_new_obs)
-                                                            print(V_new_state.T)
-                                                            print(y_kde(Y[k,t,:]))
-                                                      wo3[k,n] = (V_new_obs @ cov_embedding @ V_new_state.T) * y_kde(Y[k,t,:])
-                                                      if k == 0 and n == 0:
-                                                            print(wo3[k,n])
-                                                      if wo3[k,n] < 0: wo3[k,n] = 0
-                                                      wo3[k,n] = np.real(wo3[k,n]) + 1e-40
-
 
                                     # sum of normalized likelihoods for a given observation equals one
                                           wo[k, :] /= np.sum(wo[k, :])
-                                          np.save('wo.npy', wo)
-                                          wo3[k, :] /= np.sum(wo3[k, :])
-                                          np.save('wo3.npy', wo3)
 
                                     # if test_compute_pyx_directly:
                                     #       wo = wo2
 
                               # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
-
+                              
                               if debug_nle_noDA:
                                     xa = xf
                               else:
@@ -1465,8 +1478,6 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     # y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
 
-                              xtrinit = x_train.copy()
-                              ytrinit = y_train.copy()
                               l = 0
                               for j in range(0, Ny, tof):
                                     l += 1

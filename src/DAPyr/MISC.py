@@ -13,6 +13,7 @@ from sklearn.neighbors import NearestNeighbors
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsl
 from pydiffmap import diffusion_map as dm
+import matplotlib.pyplot as plt
 
 import warnings
 
@@ -385,7 +386,13 @@ def choose_optimal_epsilon_BGH(scaled_distsq, epsilons=None):
     epsilons = np.sort(epsilons).astype('float')
     log_T = [logsumexp(-scaled_distsq/(eps)) for eps in epsilons]
     log_eps = np.log(epsilons)
+    # fig, ax = plt.subplots()
+    # ax.semilogx(epsilons[:81], log_T)
+    # plt.show()
     log_deriv = np.diff(log_T)/np.diff(log_eps)
+    # fig, ax = plt.subplots()
+    # ax.loglog(epsilons[:80], log_deriv)
+    # plt.show()
     max_loc = np.argmax(log_deriv)
     # epsilon = np.max([np.exp(log_eps[max_loc]), np.exp(log_eps[max_loc+1])])
     epsilon = np.exp(log_eps[max_loc])
@@ -405,15 +412,36 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
             denom = np.max(np.abs(scaled_data[:, i]))
             if denom > 0:
                 scaled_data[:, i] /= denom
+
+    ##### START EDITS
+    np.save('scaled_data.npy', scaled_data)
+    K = squareform(pdist(scaled_data))
+    if bw=='adaptive':
+          print('starting before')
+          bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
+          bw *= 2
+          print(f'bw from before: {bw}')
+
     sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
     sknn.fit(scaled_data)
     dists = sknn.kneighbors_graph(scaled_data, mode='distance')
-    
-    K = dists.copy()
+
+    R = dists.copy()
+    K = R.toarray()
+    upper = K[np.triu_indices_from(K, k=1)]
+    upper_no_zeros = upper[upper != 0]
+    median_offdiag = np.median(upper_no_zeros)
+    K = R
+
+    if bw=='knn_adaptive':
+          print(f'using median distance without 0s: {median_offdiag}')
+          bw = median_offdiag
 
     if bw=='adaptive':
+          print('starting after')
           bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
           bw *= 2
+          print(f'bw from after: {bw}')
     
     K.data = gaussian_k(dists.data, bw)
     Ksym = (K.T).maximum(K)
@@ -479,8 +507,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=True, symmetric_row_normalize=True)
-      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=True, symmetric_row_normalize=True)
+      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 1, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 1, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 
