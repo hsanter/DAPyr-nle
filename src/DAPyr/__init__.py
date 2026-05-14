@@ -307,7 +307,7 @@ class Expt:
             #Kernel Embeddings Likelihood Estimation Parameters
             # self.obsParams['do_keest'] = 0
             self.obsParams['nle_type'] = 2
-            self.obsParams['compute_pyx_directly'] = True
+            self.obsParams['compute_pyx_directly'] = False
             self.obsParams['nle_every'] = 1
             self.obsParams['Neig'] = 30
             self.obsParams['knn_frac'] = 0.05

@@ -434,6 +434,8 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
     K = R
 
     if bw=='knn_adaptive':
+
+          print(f'knn is: {knn}, number of samples = {len(scaled_data)}')
           print(f'using median distance without 0s: {median_offdiag}')
           bw = median_offdiag
 
