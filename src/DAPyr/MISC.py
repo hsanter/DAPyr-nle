@@ -413,8 +413,6 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
             if denom > 0:
                 scaled_data[:, i] /= denom
 
-    ##### START EDITS
-    np.save('scaled_data.npy', scaled_data)
     K = squareform(pdist(scaled_data))
     if bw=='adaptive':
           print('starting before')
@@ -470,7 +468,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
         P = Dalpha * K_rn
 
       
-    # P = (P.T).maximum(P)  # Ensure symmetr
+    # P = (P.T).maximum(P)  # Ensure symmetry
     P = P + 1e-10 * np.eye(n)
     
     evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
@@ -509,8 +507,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 1, f_normalize=True, symmetric_row_normalize=True)
-      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 1, f_normalize=True, symmetric_row_normalize=True)
+      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 

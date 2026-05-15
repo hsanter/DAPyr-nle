@@ -1317,29 +1317,6 @@ def runDA(expt: Expt, maxT : int = None):
                               evec_x, eval_x, a_train_x, bwx = x_map
                               evec_y, eval_y, a_train_y, bwy = y_map
 
-                              # if t == 100:
-                              #       np.savez(f'rsfp_maps_{t}.npz',
-                              #                pab=pab,
-                              #                x_train = x_train,
-                              #                y_train = y_train,
-                              #                evec_x = evec_x,
-                              #                eval_x = eval_x,
-                              #                a_train_x = a_train_x,
-                              #                evec_y = evec_y,
-                              #                eval_y = eval_y,
-                              #                a_train_y = a_train_y,
-                              #                cov_embedding = cov_embedding,
-                              #                knn=knn,
-                              #                bwx=bwx,
-                              #                bwy=bwy)
-                              #       with open(f'rsfp_kde_{t}.pkl', 'wb') as f:
-                              #             pickle.dump(y_kde, f)
-
-                              # if t == 110 or t == 120 or t == 130:
-                              #       np.savez(f'rsfp_test_data_{t}.npz',
-                              #                hxb_nbrs = hxb_nbrs,
-                              #                Y=Y)
-                              
                               
                               x_emb = (evec_x * eval_x).T
                               y_emb = (evec_y * eval_y).T
