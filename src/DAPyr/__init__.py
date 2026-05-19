@@ -324,6 +324,7 @@ class Expt:
             self.obsParams['Nl'] = 1
             self.obsParams['Nb'] = 0
             self.obsParams['klb'] = 0.0
+            self.obsParams['train_frac'] = 1.0
             self.obsParams['debug_nle_noda'] = False
 
             #Parameters related to observation quality control
@@ -1110,7 +1111,7 @@ def runDA(expt: Expt, maxT : int = None):
       Nl = expt.getParam('Nl')
       Nb = expt.getParam('Nb')
       klb = expt.getParam('klb')
-      train_frac = 1.0
+      train_frac = expt.getParam('train_frac')
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
 
       #Flags
@@ -1346,10 +1347,18 @@ def runDA(expt: Expt, maxT : int = None):
                                     pab += 1e-40
 
 
+                                    # print(x_train.shape)
+                                    # print(y_train.shape)
+
+                                    x_train_keeps = x_train[:,keep_rows]
+                                    y_train_keeps = y_train[:,keep_rows]
+
+                                    # print(x_train_keeps.shape)
+                                    # print(y_train_keeps.shape)
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
-                                          expt.x_train = x_train.copy()
-                                          expt.y_train = y_train.copy()
+                                          expt.x_train = x_train_keeps.copy()
+                                          expt.y_train = y_train_keeps.copy()
                                     # plot_pab(expt, plot_states=True)
                                     # raise SystemExit
 
@@ -1378,13 +1387,13 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     for k in range(Ny):
                                           # print('k is {}p'.format(k))
-                                          V_new_obs[k] = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          V_new_obs[k] = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           new_obs_kde[k] = y_kde(Y[k,t,:])
 
                                           for n in range(Ne):
                                                 V_new_state[k,n] = MISC.diff_map_ext_nystrom(
                                                       hxb_nbrs[:, k, n].reshape(1, -1),
-                                                      x_train.T,
+                                                      x_train_keeps.T,
                                                       evec_x,
                                                       eval_x,
                                                       a_train_x,
@@ -1408,7 +1417,7 @@ def runDA(expt: Expt, maxT : int = None):
                                     for k in range(Ny):
                                           if nle_type >= 4 :
                                                 # print('k is {}p'.format(k))
-                                                obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                                obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                                 V_new_obs = obs_emb
                                                 obs_emb *= eval_y
                                                 ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
@@ -1417,7 +1426,7 @@ def runDA(expt: Expt, maxT : int = None):
                                                       obs_emb = MISC.diff_map_ext_nystrom(
                                           # y_train[ts:te] = Y[t,0::tof]
                                                             (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
-                                                            y_train.T,
+                                                            y_train_keeps.T,
                                                             evec_y,
                                                             eval_y,
                                                             a_train_y,
@@ -1430,7 +1439,7 @@ def runDA(expt: Expt, maxT : int = None):
                                                 # Find nearest state on manifold
                                                 state_emb = MISC.diff_map_ext_nystrom(
                                                       hxb_nbrs[:, k, n].reshape(1, -1),
-                                                      x_train.T,
+                                                      x_train_keeps.T,
                                                       evec_x,
                                                       eval_x,
                                                       a_train_x,

@@ -424,15 +424,15 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     if n_keep == 0:
         n_keep = np.ceil(N * train_frac).astype('int')
 
-    print(scaled_data.shape)
-    print(scaled_data.flatten().shape)
-                
-    data_keep, keep_inds = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
+        if train_frac < 1.0:
+              data_keep, keep_rows = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
+        else:
+              data_keep = scaled_data.flatten()
+              keep_rows = np.arange(0,len(data_keep),1)
 
-    data_keep = data_keep.reshape((n_keep,1))
-    print(data_keep.shape)
+    data_keep = scaled_data[keep_rows].reshape((n_keep,1))
 
-    K = squareform(pdist(scaled_data))
+    K = squareform(pdist(data_keep))
     if bw=='adaptive':
           print('starting before')
           bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
@@ -440,8 +440,8 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
           print(f'bw from before: {bw}')
 
     sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
-    sknn.fit(scaled_data)
-    dists = sknn.kneighbors_graph(scaled_data, mode='distance')
+    sknn.fit(data_keep)
+    dists = sknn.kneighbors_graph(data_keep, mode='distance')
 
     R = dists.copy()
     K = R.toarray()
@@ -452,7 +452,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
 
     if bw=='knn_adaptive':
 
-          print(f'knn is: {knn}, number of samples = {len(scaled_data)}')
+          print(f'knn is: {knn}, number of samples = {len(data_keep)}')
           print(f'using median distance without 0s: {median_offdiag}')
           bw = median_offdiag
 
@@ -511,7 +511,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     ix = evals.argsort()[::-1][:]
     evals = np.real(evals[ix])
     evecs = np.real(evecs[:, ix])
-    return evecs, evals, inv_row_sum, bw, scaled_data
+    return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
 def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
@@ -526,8 +526,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 1, f_normalize=True, symmetric_row_normalize=True)
-      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 1, f_normalize=True, symmetric_row_normalize=True)
+      Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, 1, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, used_data, keep_inds = dmap_hms(a_cop, Neig, knn, bw, 1, 1, keep_rows=keep_inds, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 
@@ -539,13 +539,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       x_emb = (Vb * Db).T
       y_emb = (Va * Da).T
 
-      # a_cop = a_cop[keeps]
-      # b_cop = b_cop[keeps]
-
-      # TODO WHATS THIS FOR
-      # for i in range(a_cop.shape[1]):
-          # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
-          # a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
+      a_cop = a_cop[keep_inds]
+      b_cop = b_cop[keep_inds]
 
       # kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
       kde = gaussian_kde(a_cop.T, bw_method='scott')
@@ -572,7 +567,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       pab[pab < 0] = 0
       pab = np.real(pab)
 
-      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps, C, kde
+      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keep_inds, C, kde
 
 
 def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
