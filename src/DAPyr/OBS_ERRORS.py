@@ -23,6 +23,7 @@ LOGNORMAL = 2
 CAUCHY = 3
 LOGISTIC = 5
 UNIFORM_DONT_USE_ME = 4
+MULT = 6
 
 
 def sample_errors(states, used_obs_error, params, rng):
@@ -65,6 +66,13 @@ def sample_errors(states, used_obs_error, params, rng):
             except KeyError:
                 raise KeyError(f'Parameters x0 and scale not provided in {params}')
             errors = rng.logistic(loc = x0, scale=scale, size=states.shape)
+            
+        case 6:
+            try:
+                mu, sigma = params["mu"], params["sigma"]
+            except KeyError:
+                raise KeyError(f'Parameters mu and sigma not provided in {params}')
+            errors = rng.normal(mu, sigma, size=states.shape)
 
     return errors
 
@@ -87,6 +95,11 @@ def get_likelihood(prescribed_obs_error, params):
         l_low = np.exp(-((y - hx - mu1) ** 2 / (2 * sigma1**2)))
         l_high = np.exp(-((y - hx - mu2) ** 2 / (2 * sigma2**2)))
         return np.where(hx < threshold, l_low, l_high)
+
+    def mult_gaussian_l(y, hx, mu, sigma):
+        d = ((y/hx) - mu) ** 2 / (2 * sigma**2)
+        d -= np.min(d, axis=-1)[:,None]
+        return np.exp(-d)
 
     match prescribed_obs_error:
         case 0:
@@ -126,3 +139,9 @@ def get_likelihood(prescribed_obs_error, params):
                 )
             except KeyError:
                 raise KeyError(f'Parameters x0, scale not provided in {params}')
+
+        case 6:
+            try:
+                return partial(mult_gaussian_l, mu=params["mu"], sigma=params["sigma"])
+            except KeyError:
+                raise KeyError(f'Parameters mu and sigma not provided in {params}')

@@ -399,10 +399,16 @@ def choose_optimal_epsilon_BGH(scaled_distsq, epsilons=None):
     d = np.round(2.*log_deriv[max_loc])
     return epsilon, d
 
-def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_normalize=True):
+def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_normalize=True, symmetric_row_normalize=True):
 
     def gaussian_k(d, bw):
         return np.exp(-d**2 / bw)
+
+
+    if train_frac < 1.0 and Ns != 1:
+        raise ValueError('Training fraction less than 1 selected but \
+        no strategy in place for subsampling with > 1d data!')
+    
     
     rng = np.random.default_rng(58)
     N,M = data.shape
@@ -412,6 +418,19 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, f_normalize=True, symmetric_row_nor
             denom = np.max(np.abs(scaled_data[:, i]))
             if denom > 0:
                 scaled_data[:, i] /= denom
+
+    n_keep = len(keep_rows)
+    # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
+    if n_keep == 0:
+        n_keep = np.ceil(N * train_frac).astype('int')
+
+    print(scaled_data.shape)
+    print(scaled_data.flatten().shape)
+                
+    data_keep, keep_inds = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
+
+    data_keep = data_keep.reshape((n_keep,1))
+    print(data_keep.shape)
 
     K = squareform(pdist(scaled_data))
     if bw=='adaptive':
@@ -507,8 +526,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 0, f_normalize=True, symmetric_row_normalize=True)
-      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 0, f_normalize=True, symmetric_row_normalize=True)
+      Vb, Db, a_train_b, bwb, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, 1, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, 1, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 
@@ -612,3 +631,51 @@ def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
       pab = np.real(pab)
       
       return pab, dm_b, dm_a
+
+def sample_uniform_domain(data, num_samples, num_bins=100, replace=False):
+    """
+    Samples from 1D data to achieve a uniform distribution across the data's domain.
+    
+    Args:
+        data (np.ndarray): The 1D input data.
+        num_samples (int): How many samples to draw.
+        num_bins (int): Number of bins to divide the domain into.
+        replace (bool): Whether to sample with replacement. 
+        
+    Returns:
+        sampled_data (np.ndarray): The sampled values.
+        sampled_indices (np.ndarray): The original indices of the samples.
+    """
+
+    rng = np.random.default_rng(58)
+    data = np.asarray(data)
+    
+    # 1. Create a histogram to find the frequency of values across the domain
+    counts, bin_edges = np.histogram(data, bins=num_bins)
+    
+    # 2. Map each data point to its corresponding bin index
+    # np.digitize returns 1-indexed bins. We subtract 1 to use them as array indices.
+    bin_indices = np.digitize(data, bin_edges) - 1
+    
+    # Clip indices to handle edge cases (e.g., the absolute maximum value)
+    bin_indices = np.clip(bin_indices, 0, num_bins - 1)
+    
+    # 3. Calculate weights: inverse of the count in each point's bin
+    # We use np.where to avoid dividing by zero if a bin is completely empty
+    inverse_counts = 1.0 / np.where(counts > 0, counts, 1.0)
+    
+    # 4. Assign the appropriate weight to every single data point
+    sample_weights = inverse_counts[bin_indices]
+    
+    # 5. Normalize weights so they sum to exactly 1 (required by np.random.choice)
+    sample_probabilities = sample_weights / sample_weights.sum()
+    
+    # 6. Sample the indices based on our computed probabilities
+    sampled_indices = rng.choice(
+        np.arange(len(data)), 
+        size=num_samples, 
+        replace=replace, 
+        p=sample_probabilities
+    )
+    
+    return data[sampled_indices], sampled_indices
