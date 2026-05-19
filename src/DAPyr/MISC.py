@@ -514,7 +514,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
-def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
+def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=1):
 
 
       N = a.shape[0]
@@ -526,8 +526,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac):
       # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, 1, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
-      Va, Da, a_train_a, bwa, used_data, keep_inds = dmap_hms(a_cop, Neig, knn, bw, 1, 1, keep_rows=keep_inds, f_normalize=True, symmetric_row_normalize=True)
+      Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, used_data, keep_inds = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keep_inds, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 

@@ -325,6 +325,7 @@ class Expt:
             self.obsParams['Nb'] = 0
             self.obsParams['klb'] = 0.0
             self.obsParams['train_frac'] = 1.0
+            self.obsParams['alpha'] = 1.0
             self.obsParams['debug_nle_noda'] = False
 
             #Parameters related to observation quality control
@@ -1113,6 +1114,7 @@ def runDA(expt: Expt, maxT : int = None):
       klb = expt.getParam('klb')
       train_frac = expt.getParam('train_frac')
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
+      alpha = expt.getParam('alpha')
 
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
@@ -1343,7 +1345,7 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     # print(f'doing nle at time {t}')
 
-                                    pab, x_map, y_map, keep_rows, cov_embedding, y_kde = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac)
+                                    pab, x_map, y_map, keep_rows, cov_embedding, y_kde = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
                                     pab += 1e-40
 
 
