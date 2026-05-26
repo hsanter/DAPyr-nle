@@ -1246,8 +1246,8 @@ def runDA(expt: Expt, maxT : int = None):
                   case 2: # Nothing
                         xa = xf
                   case 3: # LPF using kernel embeddings
-                        # if t == 451:
-                        #       return
+                        if t == 451:
+                              return
                         if t < T_train:
                               if debug_nle_noDA:
                                     xa = xf
