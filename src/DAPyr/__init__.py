@@ -1221,7 +1221,7 @@ def runDA(expt: Expt, maxT : int = None):
       for t in range(T):
 
 
-            if t % 20 == 0:
+            if t % 100 == 0:
                   print(f'DB: Starting cycle {t}')
 
 
@@ -1326,16 +1326,10 @@ def runDA(expt: Expt, maxT : int = None):
                                     pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
                                     pab += 1e-40
 
-
-                                    # print(x_train.shape)
-                                    # print(y_train.shape)
-
-                                    x_train_keeps = x_train[:,keep_rows]
-                                    y_train_keeps = y_train[:,keep_rows]
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
-                                          expt.x_train = x_train_keeps.copy()
-                                          expt.y_train = y_train_keeps.copy()
+                                          expt.x_train = x_train[:,keep_rows].copy()
+                                          expt.y_train = y_train[:,keep_rows].copy()
 
                               # compute particle weights outside of particle filter
 
@@ -1354,7 +1348,7 @@ def runDA(expt: Expt, maxT : int = None):
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
-                                          obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           obs_emb *= eval_y
                                           ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                     for n in range(Ne):
@@ -1362,7 +1356,7 @@ def runDA(expt: Expt, maxT : int = None):
                                                 obs_emb = MISC.diff_map_ext_nystrom(
                                     # y_train[ts:te] = Y[t,0::tof]
                                                       (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
-                                                      y_train_keeps.T,
+                                                      y_train[:,keep_rows].T,
                                                       evec_y,
                                                       eval_y,
                                                       a_train_y,
@@ -1375,7 +1369,7 @@ def runDA(expt: Expt, maxT : int = None):
                                           # Find nearest state on manifold
                                           state_emb = MISC.diff_map_ext_nystrom(
                                                 hxb_nbrs[:, k, n].reshape(1, -1),
-                                                x_train_keeps.T,
+                                                x_train[:,keep_rows].T,
                                                 evec_x,
                                                 eval_x,
                                                 a_train_x,
@@ -1433,12 +1427,6 @@ def runDA(expt: Expt, maxT : int = None):
                                     else:
                                           y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
 
-                        #        populate the next entries of x_train and y_train
-                        #        do normal LPF (see case 1)
-                        # else, 
-                        #        do estimation of p(whatever|whatever) (according to nle_type)
-                        #        do LPF with keest-estimated likelihoods
-                        #        replace a random element of the training dataset with this cycle's sample
                         
 
             if e_flag != 0:

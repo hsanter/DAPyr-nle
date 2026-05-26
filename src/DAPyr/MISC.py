@@ -243,9 +243,13 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       n_keep = len(keep_rows)
    
       # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
-      if n_keep == 0:
-          n_keep = np.ceil(N * train_frac).astype('int')
-          keep_rows = np.sort(np.argpartition(row_sum, n_keep-1)[:n_keep])
+      if train_frac < 1.0:
+            if n_keep == 0:
+                n_keep = np.ceil(N * train_frac).astype('int')
+                keep_rows = np.sort(np.argpartition(row_sum, n_keep-1)[:n_keep])
+      else:
+            keep_rows = np.arange(0, N, 1)
+            n_keep = N
 
    
       row_sum_keep = row_sum[keep_rows]
@@ -383,120 +387,119 @@ def choose_optimal_epsilon_BGH(scaled_distsq, epsilons=None):
     d = np.round(2.*log_deriv[max_loc])
     return epsilon, d
 
-# def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_normalize=True, symmetric_row_normalize=True):
+def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_normalize=True, symmetric_row_normalize=True):
 
-#     def gaussian_k(d, bw):
-#         return np.exp(-d**2 / bw)
+    def gaussian_k(d, bw):
+        return np.exp(-d**2 / bw)
 
 
-#     if train_frac < 1.0 and Ns != 1:
-#         raise ValueError('Training fraction less than 1 selected but \
-#         no strategy in place for subsampling with > 1d data!')
+    if train_frac < 1.0 and Ns != 1:
+        raise ValueError('Training fraction less than 1 selected but \
+        no strategy in place for subsampling with > 1d data!')
     
     
-#     rng = np.random.default_rng(58)
-#     N,M = data.shape
-#     scaled_data = data.copy()
-#     if f_normalize:
-#         for i in range(M):
-#             denom = np.max(np.abs(scaled_data[:, i]))
-#             if denom > 0:
-#                 scaled_data[:, i] /= denom
+    rng = np.random.default_rng(58)
+    N,M = data.shape
+    scaled_data = data.copy()
+    if f_normalize:
+        for i in range(M):
+            denom = np.max(np.abs(scaled_data[:, i]))
+            if denom > 0:
+                scaled_data[:, i] /= denom
 
-#     n_keep = len(keep_rows)
-#     # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
-#     if n_keep == 0:
-#         n_keep = np.ceil(N * train_frac).astype('int')
+    n_keep = len(keep_rows)
+    # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
+    if n_keep == 0:
+        n_keep = np.ceil(N * train_frac).astype('int')
 
-#         if train_frac < 1.0:
-#               # data_keep, keep_rows = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
-#               pass
-#         else:
-#               data_keep = scaled_data.flatten()
-#               keep_rows = np.arange(0,len(data_keep),1)
+        if train_frac < 1.0:
+              data_keep, keep_rows = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
+        else:
+              data_keep = scaled_data.flatten()
+              keep_rows = np.arange(0,len(data_keep),1)
 
-#     data_keep = scaled_data[keep_rows].reshape((n_keep,1))
+    data_keep = scaled_data[keep_rows].reshape((n_keep,1))
 
-#     K = squareform(pdist(data_keep))
-#     if bw=='adaptive':
-#           print('starting before')
-#           bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
-#           bw *= 2
-#           print(f'bw from before: {bw}')
+    K = squareform(pdist(data_keep))
+    if bw=='adaptive':
+          print('starting before')
+          bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
+          bw *= 2
+          print(f'bw from before: {bw}')
 
-#     sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
-#     sknn.fit(data_keep)
-#     dists = sknn.kneighbors_graph(data_keep, mode='distance')
+    sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
+    sknn.fit(data_keep)
+    dists = sknn.kneighbors_graph(data_keep, mode='distance')
 
-#     R = dists.copy()
-#     K = R.toarray()
-#     upper = K[np.triu_indices_from(K, k=1)]
-#     upper_no_zeros = upper[upper != 0]
-#     median_offdiag = np.median(upper_no_zeros)
-#     K = R
+    R = dists.copy()
+    K = R.toarray()
+    upper = K[np.triu_indices_from(K, k=1)]
+    upper_no_zeros = upper[upper != 0]
+    median_offdiag = np.median(upper_no_zeros)
+    K = R
 
-#     if bw=='knn_adaptive':
+    if bw=='knn_adaptive':
 
-#           print(f'knn is: {knn}, number of samples = {len(data_keep)}')
-#           print(f'using median distance without 0s: {median_offdiag}')
-#           bw = median_offdiag
+          print(f'knn is: {knn}, number of samples = {len(data_keep)}')
+          print(f'using median distance without 0s: {median_offdiag}')
+          bw = median_offdiag
 
-#     if bw=='adaptive':
-#           print('starting after')
-#           bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
-#           bw *= 2
-#           print(f'bw from after: {bw}')
+    if bw=='adaptive':
+          print('starting after')
+          bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
+          bw *= 2
+          print(f'bw from after: {bw}')
     
-#     K.data = gaussian_k(dists.data, bw)
-#     Ksym = (K.T).maximum(K)
+    K.data = gaussian_k(dists.data, bw)
+    Ksym = (K.T).maximum(K)
 
-#     # alpha normalization
-#     q = np.array(K.sum(axis=1)).ravel()
-#     right_norm_vec = np.power(q, -alpha)
-#     m = right_norm_vec.shape[0]
-#     Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
-#     K_rn = Ksym @ Dalpha
+    # alpha normalization
+    q = np.array(K.sum(axis=1)).ravel()
+    right_norm_vec = np.power(q, -alpha)
+    m = right_norm_vec.shape[0]
+    Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
+    K_rn = Ksym @ Dalpha
 
-#     # row normalization
-#     if symmetric_row_normalize:
-#         row_sum = K_rn.sum(axis=1).transpose()
-#         inv_row_sum = np.power(row_sum, -0.5)
-#         n = row_sum.shape[1]
-#         Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
-#         P = Dalpha @ K_rn @ Dalpha
-#     else:
-#         row_sum = K_rn.sum(axis=1).transpose()
-#         inv_row_sum = np.power(row_sum, -1)
-#         n = row_sum.shape[1]
-#         Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
-#         P = Dalpha * K_rn
+    # row normalization
+    if symmetric_row_normalize:
+        row_sum = K_rn.sum(axis=1).transpose()
+        inv_row_sum = np.power(row_sum, -0.5)
+        n = row_sum.shape[1]
+        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+        P = Dalpha @ K_rn @ Dalpha
+    else:
+        row_sum = K_rn.sum(axis=1).transpose()
+        inv_row_sum = np.power(row_sum, -1)
+        n = row_sum.shape[1]
+        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+        P = Dalpha * K_rn
 
       
-#     # P = (P.T).maximum(P)  # Ensure symmetry
-#     P = P + 1e-10 * np.eye(n)
+    # P = (P.T).maximum(P)  # Ensure symmetry
+    P = P + 1e-10 * np.eye(n)
     
-#     evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+    evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
 
-#     # Eigen decomposition
-#     # v0 = rng.uniform(0, 1, n)
-#     # try:
-#     #     evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
-#     # except apnc as e:
-#     #     evals = e.eigenvalues
-#     #     evecs = e.eigenvectors
-#     #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
+    # Eigen decomposition
+    # v0 = rng.uniform(0, 1, n)
+    # try:
+    #     evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+    # except apnc as e:
+    #     evals = e.eigenvalues
+    #     evecs = e.eigenvectors
+    #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
 
 
-#     # evals = np.real(evals)
-#     # evecs = np.real(evecs)
+    # evals = np.real(evals)
+    # evecs = np.real(evecs)
    
-#     # evecs = (evecs.T[np.argsort(evals)][::-1]).T
-#     # evals = evals[np.argsort(evals)][::-1]
+    # evecs = (evecs.T[np.argsort(evals)][::-1]).T
+    # evals = evals[np.argsort(evals)][::-1]
 
-#     ix = evals.argsort()[::-1][:]
-#     evals = np.real(evals[ix])
-#     evecs = np.real(evecs[:, ix])
-#     return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
+    ix = evals.argsort()[::-1][:]
+    evals = np.real(evals[ix])
+    evecs = np.real(evecs[:, ix])
+    return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
 def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
