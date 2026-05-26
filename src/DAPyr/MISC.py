@@ -525,8 +525,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       Va, Da, a_train_a, bwa, keep_inds = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keep_inds, klb=klb)
       
       # HMS TESTING 12/1
-      Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
-      Va, Da, a_train_a, bwa, used_data, keep_inds = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keep_inds, f_normalize=True, symmetric_row_normalize=True)
+      # Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
+      # Va, Da, a_train_a, bwa, used_data, keep_inds = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keep_inds, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 
@@ -571,7 +571,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       pab[pab < 0] = 0
       pab = np.real(pab)
 
-      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keep_inds, C, kde
+      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keep_inds
 
 
 def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):

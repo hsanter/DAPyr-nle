@@ -1347,7 +1347,7 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     # print(f'doing nle at time {t}')
 
-                                    pab, x_map, y_map, keep_rows, cov_embedding, y_kde = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
+                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
                                     pab += 1e-40
 
 
@@ -1375,92 +1375,52 @@ def runDA(expt: Expt, maxT : int = None):
                               y_emb = (evec_y * eval_y).T
 
                               wo = np.zeros((Ny, Ne))
-                              wo2 = np.zeros((Ny, Ne))
-                              wo3 = np.zeros((Ny, Ne))
 
                               a_train_x = np.asarray(a_train_x).squeeze()
                               a_train_y = np.asarray(a_train_y).squeeze()
 
-                              if compute_pyx_directly:
-                                    # print('computing directly!')
-                                    V_new_obs = np.zeros((Ny, Neig+1))
-                                    V_new_state = np.zeros((Ny, Ne, Neig+1))
-                                    new_obs_kde = np.zeros(Ny)
-
-                                    for k in range(Ny):
+                              for k in range(Ny):
+                                    if nle_type >= 4 :
                                           # print('k is {}p'.format(k))
-                                          V_new_obs[k] = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
-                                          new_obs_kde[k] = y_kde(Y[k,t,:])
-
-                                          for n in range(Ne):
-                                                V_new_state[k,n] = MISC.diff_map_ext_nystrom(
-                                                      hxb_nbrs[:, k, n].reshape(1, -1),
-                                                      x_train_keeps.T,
-                                                      evec_x,
-                                                      eval_x,
-                                                      a_train_x,
-                                                      bwx,
+                                          obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          V_new_obs = obs_emb
+                                          obs_emb *= eval_y
+                                          ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
+                                    for n in range(Ne):
+                                          if nle_type < 4:
+                                                obs_emb = MISC.diff_map_ext_nystrom(
+                                    # y_train[ts:te] = Y[t,0::tof]
+                                                      (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
+                                                      y_train_keeps.T,
+                                                      evec_y,
+                                                      eval_y,
+                                                      a_train_y,
+                                                      bwy,
                                                       knn,
-                                                      Ns,
+                                                      1,
                                                 )
-                                    temp = V_new_obs @ cov_embedding
-                                    wo2 = np.einsum('kd, knd->kn', temp, V_new_state)
-                                    wo2 *= new_obs_kde[:,None]
-                                    
-                                    wo2 = np.maximum(wo2, 0)
-                                    wo2 = np.real(wo2) + 1e-40
-                                    for k in range(Ny):
-                                          wo2[k, :] /= np.sum(wo2[k, :])
-
-                                    wo = wo2
-                              # if compute_pyx_directly:
-                              else:
-                                          
-                                    for k in range(Ny):
-                                          if nle_type >= 4 :
-                                                # print('k is {}p'.format(k))
-                                                obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
-                                                V_new_obs = obs_emb
-                                                obs_emb *= eval_y
+                                                obs_emb *= eval_y  # Element-wise multiplication along columns
                                                 ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
-                                          for n in range(Ne):
-                                                if nle_type < 4:
-                                                      obs_emb = MISC.diff_map_ext_nystrom(
-                                          # y_train[ts:te] = Y[t,0::tof]
-                                                            (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
-                                                            y_train_keeps.T,
-                                                            evec_y,
-                                                            eval_y,
-                                                            a_train_y,
-                                                            bwy,
-                                                            knn,
-                                                            1,
-                                                      )
-                                                      obs_emb *= eval_y  # Element-wise multiplication along columns
-                                                      ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
-                                                # Find nearest state on manifold
-                                                state_emb = MISC.diff_map_ext_nystrom(
-                                                      hxb_nbrs[:, k, n].reshape(1, -1),
-                                                      x_train_keeps.T,
-                                                      evec_x,
-                                                      eval_x,
-                                                      a_train_x,
-                                                      bwx,
-                                                      knn,
-                                                      Ns,
-                                                )
-                                                V_new_state = state_emb
-                                                state_emb *= eval_x  # Element-wise multiplication along columns
-                                                ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
-                                                wo[k,n] = pab[ind2, ind1]
+                                          # Find nearest state on manifold
+                                          state_emb = MISC.diff_map_ext_nystrom(
+                                                hxb_nbrs[:, k, n].reshape(1, -1),
+                                                x_train_keeps.T,
+                                                evec_x,
+                                                eval_x,
+                                                a_train_x,
+                                                bwx,
+                                                knn,
+                                                Ns,
+                                          )
+                                          V_new_state = state_emb
+                                          state_emb *= eval_x  # Element-wise multiplication along columns
+                                          ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
+                                          wo[k,n] = pab[ind2, ind1]
 
-                                    # sum of normalized likelihoods for a given observation equals one
-                                          wo[k, :] /= np.sum(wo[k, :])
+                              # sum of normalized likelihoods for a given observation equals one
+                                    wo[k, :] /= np.sum(wo[k, :])
 
-                                    # if test_compute_pyx_directly:
-                                    #       wo = wo2
 
-                              # placeholder - gaussian assimilation while i make sure that updating x_train and y_train works.
                               
                               if debug_nle_noDA:
                                     xa = xf
