@@ -294,15 +294,6 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
 
 def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
 
-
-      # print(Xnew)
-      # print(Xtrain)
-      # print(V)
-      # print(D)
-      # print(alphaTrain)
-      # print(chosenBw)
-      # print(knn)
-      # print(Ns)
       N, M = Xtrain.shape
       N2 = Xnew.shape[0]
       
@@ -385,13 +376,7 @@ def choose_optimal_epsilon_BGH(scaled_distsq, epsilons=None):
     epsilons = np.sort(epsilons).astype('float')
     log_T = [logsumexp(-scaled_distsq/(eps)) for eps in epsilons]
     log_eps = np.log(epsilons)
-    # fig, ax = plt.subplots()
-    # ax.semilogx(epsilons[:81], log_T)
-    # plt.show()
     log_deriv = np.diff(log_T)/np.diff(log_eps)
-    # fig, ax = plt.subplots()
-    # ax.loglog(epsilons[:80], log_deriv)
-    # plt.show()
     max_loc = np.argmax(log_deriv)
     # epsilon = np.max([np.exp(log_eps[max_loc]), np.exp(log_eps[max_loc+1])])
     epsilon = np.exp(log_eps[max_loc])

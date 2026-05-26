@@ -313,7 +313,6 @@ class Expt:
             #Kernel Embeddings Likelihood Estimation Parameters
             # self.obsParams['do_keest'] = 0
             self.obsParams['nle_type'] = 2
-            self.obsParams['compute_pyx_directly'] = False
             self.obsParams['nle_every'] = 1
             self.obsParams['Neig'] = 30
             self.obsParams['knn_frac'] = 0.05
@@ -325,7 +324,7 @@ class Expt:
             self.obsParams['Nb'] = 0
             self.obsParams['klb'] = 0.0
             self.obsParams['train_frac'] = 1.0
-            self.obsParams['alpha'] = 1.0
+            self.obsParams['alpha'] = 0.0
             self.obsParams['debug_nle_noda'] = False
 
             #Parameters related to observation quality control
@@ -1101,7 +1100,6 @@ def runDA(expt: Expt, maxT : int = None):
 
       # Nonparametric Likelihood Estimation Parameters
       nle_type = expt.getParam('nle_type')
-      compute_pyx_directly = expt.getParam('compute_pyx_directly')
       nle_every = expt.getParam('nle_every')
       Neig = expt.getParam('Neig')
       knn_frac = expt.getParam('knn_frac')
@@ -1297,24 +1295,10 @@ def runDA(expt: Expt, maxT : int = None):
                                     # 5: p(y|xa)
                                     if nle_type == 2 or nle_type == 4:
                                           x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
-                                          # match h_flag:
-                                          #       case 0:
-                                          #             x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
-                                          #       case 1:
-                                          #             x_train[:Ns,ts+s-1] = Htemp @ np.square(xt[:,t])
-                                          #       case 2:
-                                          #             x_train[:Ns,ts+s-1] = Htemp @ np.log(np.abs(xt[:,t]))
                                     elif nle_type == 3 or nle_type == 5:
                                           choose_mem = rng.integers(0,Ne)
                                           random_member = xa[:,choose_mem]
                                           x_train[:Ns,ts+s-1] = Htemp @ random_member
-                                          # match h_flag:
-                                          #       case 0:
-                                          #             x_train[:Ns,ts+s-1] = Htemp @ random_member
-                                          #       case 1:
-                                          #             x_train[:Ns,ts+s-1] = Htemp @ np.square(random_member)
-                                          #       case 2:
-                                          #             x_train[:Ns,ts+s-1] = Htemp @ np.log(np.abs(random_member))
                                           
                                           
                               if nle_type == 4 or nle_type == 5:
@@ -1333,19 +1317,11 @@ def runDA(expt: Expt, maxT : int = None):
                                       if Ns == 1:
                                           Htemp = Htemp.T  # Transpose if Ns == 1
                                       hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
-                                      # match h_flag:
-                                      #     case 0:
-                                      #           hxb_nbrs[:, n, k] = Htemp @ xf[:, n] 
-                                      #     case 1:
-                                      #           hxb_nbrs[:, n, k] = Htemp @ np.square(xf[:, n])
-                                      #     case 2:
-                                      #           hxb_nbrs[:, n, k] = Htemp @ np.log(np.abs(xf[:, n])) 
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
 
                               if (t - T_train) % nle_every == 0:
                               
 
-                                    # print(f'doing nle at time {t}')
 
                                     pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
                                     pab += 1e-40
@@ -1356,9 +1332,6 @@ def runDA(expt: Expt, maxT : int = None):
 
                                     x_train_keeps = x_train[:,keep_rows]
                                     y_train_keeps = y_train[:,keep_rows]
-
-                                    # print(x_train_keeps.shape)
-                                    # print(y_train_keeps.shape)
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
                                           expt.x_train = x_train_keeps.copy()
@@ -1381,7 +1354,6 @@ def runDA(expt: Expt, maxT : int = None):
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
-                                          # print('k is {}p'.format(k))
                                           obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           V_new_obs = obs_emb
                                           obs_emb *= eval_y
@@ -1444,13 +1416,6 @@ def runDA(expt: Expt, maxT : int = None):
                                     # Use truth or random sample from posterior
                                     if nle_type in [2, 4]:
                                           hxtemp[:, l - 1] = Htemp @ xt[:,t]
-                                          # match h_flag:
-                                          #       case 0:
-                                          #             hxtemp[:, l - 1] = Htemp @ xt[:,t]
-                                          #       case 1:
-                                          #             hxtemp[:, l - 1] = Htemp @ np.square(xt[:,t])
-                                          #       case 2:
-                                          #             hxtemp[:, l - 1] = Htemp @ np.log(np.abs(xt[:,t]))
                                     else:
                                           random_member = rng.integers(0,Ne)
                                           hxtemp[:, l - 1] = hxb_nbrs[:, j, random_member]
