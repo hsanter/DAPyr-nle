@@ -1246,6 +1246,8 @@ def runDA(expt: Expt, maxT : int = None):
                   case 2: # Nothing
                         xa = xf
                   case 3: # LPF using kernel embeddings
+                        # if t == 451:
+                        #       return
                         if t < T_train:
                               if debug_nle_noDA:
                                     xa = xf
@@ -1301,8 +1303,6 @@ def runDA(expt: Expt, maxT : int = None):
                                           expt.keest_pab = pab.copy()
                                           expt.x_train = x_train.copy()
                                           expt.y_train = y_train.copy()
-                                    # plot_pab(expt, plot_states=True)
-                                    # raise SystemExit
 
                               # compute particle weights outside of particle filter
 
