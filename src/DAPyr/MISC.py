@@ -13,7 +13,6 @@ from sklearn.neighbors import NearestNeighbors
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsl
 from pydiffmap import diffusion_map as dm
-import matplotlib.pyplot as plt
 
 import warnings
 
@@ -383,119 +382,120 @@ def choose_optimal_epsilon_BGH(scaled_distsq, epsilons=None):
     d = np.round(2.*log_deriv[max_loc])
     return epsilon, d
 
-def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_normalize=True, symmetric_row_normalize=True):
+# def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_normalize=True, symmetric_row_normalize=True):
 
-    def gaussian_k(d, bw):
-        return np.exp(-d**2 / bw)
+#     def gaussian_k(d, bw):
+#         return np.exp(-d**2 / bw)
 
 
-    if train_frac < 1.0 and Ns != 1:
-        raise ValueError('Training fraction less than 1 selected but \
-        no strategy in place for subsampling with > 1d data!')
+#     if train_frac < 1.0 and Ns != 1:
+#         raise ValueError('Training fraction less than 1 selected but \
+#         no strategy in place for subsampling with > 1d data!')
     
     
-    rng = np.random.default_rng(58)
-    N,M = data.shape
-    scaled_data = data.copy()
-    if f_normalize:
-        for i in range(M):
-            denom = np.max(np.abs(scaled_data[:, i]))
-            if denom > 0:
-                scaled_data[:, i] /= denom
+#     rng = np.random.default_rng(58)
+#     N,M = data.shape
+#     scaled_data = data.copy()
+#     if f_normalize:
+#         for i in range(M):
+#             denom = np.max(np.abs(scaled_data[:, i]))
+#             if denom > 0:
+#                 scaled_data[:, i] /= denom
 
-    n_keep = len(keep_rows)
-    # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
-    if n_keep == 0:
-        n_keep = np.ceil(N * train_frac).astype('int')
+#     n_keep = len(keep_rows)
+#     # choose train_frac % of rows with the lowest row sum; keep track of which rows (samples) that is
+#     if n_keep == 0:
+#         n_keep = np.ceil(N * train_frac).astype('int')
 
-        if train_frac < 1.0:
-              data_keep, keep_rows = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
-        else:
-              data_keep = scaled_data.flatten()
-              keep_rows = np.arange(0,len(data_keep),1)
+#         if train_frac < 1.0:
+#               # data_keep, keep_rows = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
+#               pass
+#         else:
+#               data_keep = scaled_data.flatten()
+#               keep_rows = np.arange(0,len(data_keep),1)
 
-    data_keep = scaled_data[keep_rows].reshape((n_keep,1))
+#     data_keep = scaled_data[keep_rows].reshape((n_keep,1))
 
-    K = squareform(pdist(data_keep))
-    if bw=='adaptive':
-          print('starting before')
-          bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
-          bw *= 2
-          print(f'bw from before: {bw}')
+#     K = squareform(pdist(data_keep))
+#     if bw=='adaptive':
+#           print('starting before')
+#           bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
+#           bw *= 2
+#           print(f'bw from before: {bw}')
 
-    sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
-    sknn.fit(data_keep)
-    dists = sknn.kneighbors_graph(data_keep, mode='distance')
+#     sknn = NearestNeighbors(n_neighbors=knn, n_jobs=-1, algorithm='ball_tree')
+#     sknn.fit(data_keep)
+#     dists = sknn.kneighbors_graph(data_keep, mode='distance')
 
-    R = dists.copy()
-    K = R.toarray()
-    upper = K[np.triu_indices_from(K, k=1)]
-    upper_no_zeros = upper[upper != 0]
-    median_offdiag = np.median(upper_no_zeros)
-    K = R
+#     R = dists.copy()
+#     K = R.toarray()
+#     upper = K[np.triu_indices_from(K, k=1)]
+#     upper_no_zeros = upper[upper != 0]
+#     median_offdiag = np.median(upper_no_zeros)
+#     K = R
 
-    if bw=='knn_adaptive':
+#     if bw=='knn_adaptive':
 
-          print(f'knn is: {knn}, number of samples = {len(data_keep)}')
-          print(f'using median distance without 0s: {median_offdiag}')
-          bw = median_offdiag
+#           print(f'knn is: {knn}, number of samples = {len(data_keep)}')
+#           print(f'using median distance without 0s: {median_offdiag}')
+#           bw = median_offdiag
 
-    if bw=='adaptive':
-          print('starting after')
-          bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
-          bw *= 2
-          print(f'bw from after: {bw}')
+#     if bw=='adaptive':
+#           print('starting after')
+#           bw, max_d = choose_optimal_epsilon_BGH(K.data ** 2)
+#           bw *= 2
+#           print(f'bw from after: {bw}')
     
-    K.data = gaussian_k(dists.data, bw)
-    Ksym = (K.T).maximum(K)
+#     K.data = gaussian_k(dists.data, bw)
+#     Ksym = (K.T).maximum(K)
 
-    # alpha normalization
-    q = np.array(K.sum(axis=1)).ravel()
-    right_norm_vec = np.power(q, -alpha)
-    m = right_norm_vec.shape[0]
-    Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
-    K_rn = Ksym @ Dalpha
+#     # alpha normalization
+#     q = np.array(K.sum(axis=1)).ravel()
+#     right_norm_vec = np.power(q, -alpha)
+#     m = right_norm_vec.shape[0]
+#     Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
+#     K_rn = Ksym @ Dalpha
 
-    # row normalization
-    if symmetric_row_normalize:
-        row_sum = K_rn.sum(axis=1).transpose()
-        inv_row_sum = np.power(row_sum, -0.5)
-        n = row_sum.shape[1]
-        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
-        P = Dalpha @ K_rn @ Dalpha
-    else:
-        row_sum = K_rn.sum(axis=1).transpose()
-        inv_row_sum = np.power(row_sum, -1)
-        n = row_sum.shape[1]
-        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
-        P = Dalpha * K_rn
+#     # row normalization
+#     if symmetric_row_normalize:
+#         row_sum = K_rn.sum(axis=1).transpose()
+#         inv_row_sum = np.power(row_sum, -0.5)
+#         n = row_sum.shape[1]
+#         Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+#         P = Dalpha @ K_rn @ Dalpha
+#     else:
+#         row_sum = K_rn.sum(axis=1).transpose()
+#         inv_row_sum = np.power(row_sum, -1)
+#         n = row_sum.shape[1]
+#         Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+#         P = Dalpha * K_rn
 
       
-    # P = (P.T).maximum(P)  # Ensure symmetry
-    P = P + 1e-10 * np.eye(n)
+#     # P = (P.T).maximum(P)  # Ensure symmetry
+#     P = P + 1e-10 * np.eye(n)
     
-    evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+#     evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
 
-    # Eigen decomposition
-    # v0 = rng.uniform(0, 1, n)
-    # try:
-    #     evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
-    # except apnc as e:
-    #     evals = e.eigenvalues
-    #     evecs = e.eigenvectors
-    #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
+#     # Eigen decomposition
+#     # v0 = rng.uniform(0, 1, n)
+#     # try:
+#     #     evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+#     # except apnc as e:
+#     #     evals = e.eigenvalues
+#     #     evecs = e.eigenvectors
+#     #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
 
 
-    # evals = np.real(evals)
-    # evecs = np.real(evecs)
+#     # evals = np.real(evals)
+#     # evecs = np.real(evecs)
    
-    # evecs = (evecs.T[np.argsort(evals)][::-1]).T
-    # evals = evals[np.argsort(evals)][::-1]
+#     # evecs = (evecs.T[np.argsort(evals)][::-1]).T
+#     # evals = evals[np.argsort(evals)][::-1]
 
-    ix = evals.argsort()[::-1][:]
-    evals = np.real(evals[ix])
-    evecs = np.real(evecs[:, ix])
-    return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
+#     ix = evals.argsort()[::-1][:]
+#     evals = np.real(evals[ix])
+#     evecs = np.real(evecs[:, ix])
+#     return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
 def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
@@ -616,50 +616,50 @@ def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
       
       return pab, dm_b, dm_a
 
-def sample_uniform_domain(data, num_samples, num_bins=100, replace=False):
-    """
-    Samples from 1D data to achieve a uniform distribution across the data's domain.
+# def sample_uniform_domain(data, num_samples, num_bins=100, replace=False):
+#     """
+#     Samples from 1D data to achieve a uniform distribution across the data's domain.
     
-    Args:
-        data (np.ndarray): The 1D input data.
-        num_samples (int): How many samples to draw.
-        num_bins (int): Number of bins to divide the domain into.
-        replace (bool): Whether to sample with replacement. 
+#     Args:
+#         data (np.ndarray): The 1D input data.
+#         num_samples (int): How many samples to draw.
+#         num_bins (int): Number of bins to divide the domain into.
+#         replace (bool): Whether to sample with replacement. 
         
-    Returns:
-        sampled_data (np.ndarray): The sampled values.
-        sampled_indices (np.ndarray): The original indices of the samples.
-    """
+#     Returns:
+#         sampled_data (np.ndarray): The sampled values.
+#         sampled_indices (np.ndarray): The original indices of the samples.
+#     """
 
-    rng = np.random.default_rng(58)
-    data = np.asarray(data)
+#     rng = np.random.default_rng(58)
+#     data = np.asarray(data)
     
-    # 1. Create a histogram to find the frequency of values across the domain
-    counts, bin_edges = np.histogram(data, bins=num_bins)
+#     # 1. Create a histogram to find the frequency of values across the domain
+#     counts, bin_edges = np.histogram(data, bins=num_bins)
     
-    # 2. Map each data point to its corresponding bin index
-    # np.digitize returns 1-indexed bins. We subtract 1 to use them as array indices.
-    bin_indices = np.digitize(data, bin_edges) - 1
+#     # 2. Map each data point to its corresponding bin index
+#     # np.digitize returns 1-indexed bins. We subtract 1 to use them as array indices.
+#     bin_indices = np.digitize(data, bin_edges) - 1
     
-    # Clip indices to handle edge cases (e.g., the absolute maximum value)
-    bin_indices = np.clip(bin_indices, 0, num_bins - 1)
+#     # Clip indices to handle edge cases (e.g., the absolute maximum value)
+#     bin_indices = np.clip(bin_indices, 0, num_bins - 1)
     
-    # 3. Calculate weights: inverse of the count in each point's bin
-    # We use np.where to avoid dividing by zero if a bin is completely empty
-    inverse_counts = 1.0 / np.where(counts > 0, counts, 1.0)
+#     # 3. Calculate weights: inverse of the count in each point's bin
+#     # We use np.where to avoid dividing by zero if a bin is completely empty
+#     inverse_counts = 1.0 / np.where(counts > 0, counts, 1.0)
     
-    # 4. Assign the appropriate weight to every single data point
-    sample_weights = inverse_counts[bin_indices]
+#     # 4. Assign the appropriate weight to every single data point
+#     sample_weights = inverse_counts[bin_indices]
     
-    # 5. Normalize weights so they sum to exactly 1 (required by np.random.choice)
-    sample_probabilities = sample_weights / sample_weights.sum()
+#     # 5. Normalize weights so they sum to exactly 1 (required by np.random.choice)
+#     sample_probabilities = sample_weights / sample_weights.sum()
     
-    # 6. Sample the indices based on our computed probabilities
-    sampled_indices = rng.choice(
-        np.arange(len(data)), 
-        size=num_samples, 
-        replace=replace, 
-        p=sample_probabilities
-    )
+#     # 6. Sample the indices based on our computed probabilities
+#     sampled_indices = rng.choice(
+#         np.arange(len(data)), 
+#         size=num_samples, 
+#         replace=replace, 
+#         p=sample_probabilities
+#     )
     
-    return data[sampled_indices], sampled_indices
+#     return data[sampled_indices], sampled_indices

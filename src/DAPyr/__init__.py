@@ -1355,7 +1355,6 @@ def runDA(expt: Expt, maxT : int = None):
                               for k in range(Ny):
                                     if nle_type >= 4 :
                                           obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train_keeps.T,evec_y,eval_y,a_train_y,bwy,knn,1);
-                                          V_new_obs = obs_emb
                                           obs_emb *= eval_y
                                           ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                     for n in range(Ne):
@@ -1384,7 +1383,6 @@ def runDA(expt: Expt, maxT : int = None):
                                                 knn,
                                                 Ns,
                                           )
-                                          V_new_state = state_emb
                                           state_emb *= eval_x  # Element-wise multiplication along columns
                                           ind1 = np.argmin(np.sum((state_emb.T - x_emb) ** 2, axis=0))
                                           wo[k,n] = pab[ind2, ind1]
