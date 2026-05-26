@@ -293,6 +293,7 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
 
 def diff_map_ext_nystrom(Xnew, Xtrain, V, D, alphaTrain, chosenBw, knn, Ns):
 
+      
       N, M = Xtrain.shape
       N2 = Xnew.shape[0]
       
@@ -504,14 +505,15 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       N = a.shape[0]
       a_cop = a.copy()
       b_cop = b.copy()
+      print(alpha)
 
       # Get eigenvectors and eigenvalues of diffusion maps
-      Vb, Db, a_train_b, bwb, keep_inds = diff_map(b_cop, Neig, knn, bw, 0.00, Ns, train_frac, plotW=False, klb=klb)
-      Va, Da, a_train_a, bwa, keep_inds = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keep_inds, klb=klb)
+      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.00, Ns, train_frac, plotW=False, klb=klb)
+      Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keeps, klb=klb)
       
       # HMS TESTING 12/1
-      # Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
-      # Va, Da, a_train_a, bwa, used_data, keep_inds = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keep_inds, f_normalize=True, symmetric_row_normalize=True)
+      # Vb, Db, a_train_b, bwb, used_data, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
+      # Va, Da, a_train_a, bwa, used_data, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keeps, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
 
@@ -523,8 +525,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       x_emb = (Vb * Db).T
       y_emb = (Va * Da).T
 
-      a_cop = a_cop[keep_inds]
-      b_cop = b_cop[keep_inds]
+      a_cop = a_cop[keeps]
+      b_cop = b_cop[keeps]
 
       # TODO WHATS THIS FOR
       for i in range(a_cop.shape[1]):
@@ -556,7 +558,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       pab[pab < 0] = 0
       pab = np.real(pab)
 
-      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keep_inds
+      return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps
 
 
 def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
