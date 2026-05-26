@@ -232,10 +232,10 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
           W.data = np.where(W.data > klb, W.data, np.zeros_like(W.data))
    
 
-      q = np.array(W.sum(axis=1)).ravel() + 1e-16
-      if alpha != 0.0:
-            dq = diags(q**-alpha)
-            W = dq @ W @ dq
+      # q = np.array(W.sum(axis=1)).ravel() + 1e-16
+      # if alpha != 0.0:
+      #       dq = diags(q**-alpha)
+      #       W = dq @ W @ dq
 
           
       row_sum = np.array(W.sum(axis=1)).ravel()
@@ -251,7 +251,6 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
    
       row_sum_keep = row_sum[keep_rows]
       W_keep = W[np.ix_(keep_rows, keep_rows)]
-      
       alpha_train = 1.0 / np.sqrt(row_sum_keep)
       # alpha_train = 1.0 / np.sqrt(row_sum)
       ld = diags(alpha_train)
@@ -287,8 +286,8 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
 
 
           
-      a_signs = np.where(eig_vecs[0] < 0, -1, 1)
-      eig_vecs *= a_signs
+      # a_signs = np.where(eig_vecs[0] < 0, -1, 1)
+      # eig_vecs *= a_signs
    
       return eig_vecs[:, valid_indices], eig_vals[valid_indices], alpha_train, chosen_bw, keep_rows
 
@@ -514,7 +513,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
-def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=1):
+def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
 
 
       N = a.shape[0]
@@ -522,8 +521,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=1):
       b_cop = b.copy()
 
       # Get eigenvectors and eigenvalues of diffusion maps
-      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
-      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
+      Vb, Db, a_train_b, bwb, keep_inds = diff_map(b_cop, Neig, knn, bw, 0.00, Ns, train_frac, plotW=False, klb=klb)
+      Va, Da, a_train_a, bwa, keep_inds = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keep_inds, klb=klb)
       
       # HMS TESTING 12/1
       Vb, Db, a_train_b, bwb, used_data, keep_inds = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
@@ -541,6 +540,11 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=1):
 
       a_cop = a_cop[keep_inds]
       b_cop = b_cop[keep_inds]
+
+      # TODO WHATS THIS FOR
+      for i in range(a_cop.shape[1]):
+          # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
+          a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
 
       # kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
       kde = gaussian_kde(a_cop.T, bw_method='scott')
