@@ -475,19 +475,20 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
         P = Dalpha * K_rn
 
       
-    # P = (P.T).maximum(P)  # Ensure symmetry
+    P = (P.T).maximum(P)  # Ensure symmetry
     P = P + 1e-10 * np.eye(n)
-    
-    evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+
+    # evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+
 
     # Eigen decomposition
-    # v0 = rng.uniform(0, 1, n)
-    # try:
-    #     evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
-    # except apnc as e:
-    #     evals = e.eigenvalues
-    #     evecs = e.eigenvectors
-    #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
+    v0 = rng.uniform(0, 1, n)
+    try:
+        evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+    except apnc as e:
+        evals = e.eigenvalues
+        evecs = e.eigenvectors
+        print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
 
 
     # evals = np.real(evals)
@@ -499,6 +500,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     ix = evals.argsort()[::-1][:]
     evals = np.real(evals[ix])
     evecs = np.real(evecs[:, ix])
+
     return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
@@ -508,17 +510,21 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       N = a.shape[0]
       a_cop = a.copy()
       b_cop = b.copy()
-      print(alpha)
 
       # Get eigenvectors and eigenvalues of diffusion maps
-      Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.00, Ns, train_frac, plotW=False, klb=klb)
-      Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keeps, klb=klb)
-      
+      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.00, Ns, train_frac, plotW=False, klb=klb)
+      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keeps, klb=klb)
+
+      # print('diff map')
+      # print(Da)
+     
       # HMS TESTING 12/1
-      # Vb, Db, a_train_b, bwb, used_data, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
-      # Va, Da, a_train_a, bwa, used_data, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keeps, f_normalize=True, symmetric_row_normalize=True)
+      Vb, Db, a_train_b, bwb, used_data, keeps = dmap_hms(b_cop, Neig, knn, bw, Ns, alpha, train_frac=train_frac, f_normalize=True, symmetric_row_normalize=True)
+      Va, Da, a_train_a, bwa, used_data, keeps = dmap_hms(a_cop, Neig, knn, bw, 1, alpha, keep_rows=keeps, f_normalize=True, symmetric_row_normalize=True)
       # HMS END TESTING 12/1
 
+      # print('dmap')
+      # print(Da)
 
       a_signs = np.where(Va[0] < 0, -1, 1)
       Va *= a_signs
