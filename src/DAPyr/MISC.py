@@ -222,8 +222,6 @@ def diff_map(data, Neig, knn, bw, eigmin, Ns, train_frac, keep_rows=[], klb=0.0,
       chosen_bw = bw
       # Build weight matrix
       temp_w = np.exp(-(dt**2) / chosen_bw)
-
-      
       row_idx = np.repeat(np.arange(N), knn)
       W = csr_matrix((temp_w.ravel(), (row_idx, nidx.ravel())), shape=(N, N))
       W = (W.T).maximum(W)  # Symmetrize
@@ -443,6 +441,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
           print(f'knn is: {knn}, number of samples = {len(data_keep)}')
           print(f'using median distance without 0s: {median_offdiag}')
           bw = median_offdiag
+          print(bw)
 
     if bw=='adaptive':
           print('starting after')
@@ -512,8 +511,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       b_cop = b.copy()
 
       # Get eigenvectors and eigenvalues of diffusion maps
-      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.00, Ns, train_frac, plotW=False, klb=klb)
-      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.00, 1, train_frac, keeps, klb=klb)
+      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=False, klb=klb)
+      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
 
       # print('diff map')
       # print(Da)
@@ -538,9 +537,9 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       b_cop = b_cop[keeps]
 
       # TODO WHATS THIS FOR
-      for i in range(a_cop.shape[1]):
+      # for i in range(a_cop.shape[1]):
           # varb[i] = (np.sqrt(varb[i]) / np.max(np.abs(a[:, i]))) ** 2
-          a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
+          # a_cop[:, i] /= np.max(np.abs(a_cop[:, i]))
 
       # kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
       kde = gaussian_kde(a_cop.T, bw_method='scott')
