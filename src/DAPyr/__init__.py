@@ -326,6 +326,7 @@ class Expt:
             self.obsParams['train_frac'] = 1.0
             self.obsParams['alpha'] = 0.0
             self.obsParams['debug_nle_noda'] = False
+            self.obsParams['split_l05_state'] = False
 
             #Parameters related to observation quality control
             self.obsParams['qc_flag'] = 0
@@ -1221,7 +1222,7 @@ def runDA(expt: Expt, maxT : int = None):
       for t in range(T):
 
 
-            if t % 100 == 0:
+            if t % 20 == 0:
                   print(f'DB: Starting cycle {t}')
 
 

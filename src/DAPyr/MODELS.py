@@ -98,3 +98,23 @@ def make_rhs_l05(kwargs):
                   dz[n] = tmp[n]
       return rhs
 
+
+def deconstruct_Z(Zn, I = 12):
+      I = int(I)
+      alpha = (3*I*I + 3)/(2*I*I*I + 4*I)
+      beta = (2*I*I + 1)/(I*I*I*I + 2*I*I)
+      Nx = len(Zn)
+      z0 = np.concatenate([Zn, Zn, Zn])
+      Xn = np.empty_like(Zn)
+
+      if I > 1:
+            Is = np.arange(-(I-1), I)
+            alpha_beta = alpha - beta*np.abs(Is)
+            for m in range(Nx):
+                  mi = m + Nx
+                  Xn[m] = np.sum(alpha_beta*z0[mi-(I-1):mi + I]) + ((alpha -beta*np.abs(-I))*z0[mi - I] + (alpha - beta*np.abs(I))*z0[mi + I])/2
+            Yn = Zn - Xn
+      else:
+            Xn = Zn
+            Yn = np.zeros_like(Zn)
+      return Xn, Yn
