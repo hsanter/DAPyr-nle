@@ -561,6 +561,7 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       # Compute pab
       
       pab = (Va @ Mu.T) * qa[:, np.newaxis]
+      # pab = (Va @ Mu.T) 
       
       # Remove imaginary and negative values
       pab[pab < 0] = 0
