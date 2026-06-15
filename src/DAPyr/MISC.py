@@ -6,7 +6,7 @@ from scipy.sparse import csr_matrix, diags
 from scipy.sparse.linalg import eigs, eigsh
 from scipy.sparse.linalg._eigen.arpack.arpack import ArpackNoConvergence as apnc
 from scipy.stats import gaussian_kde
-from scipy.linalg import inv
+from scipy.linalg import inv, solve
 from scipy.io import loadmat
 from scipy.special import logsumexp
 from sklearn.neighbors import NearestNeighbors
@@ -413,10 +413,10 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
         if train_frac < 1.0:
               data_keep, keep_rows = sample_uniform_domain(scaled_data.flatten(), n_keep, num_bins=100, replace=False)
         else:
-              data_keep = scaled_data.flatten()
+              data_keep = scaled_data
               keep_rows = np.arange(0,len(data_keep),1)
 
-    data_keep = scaled_data[keep_rows].reshape((n_keep,1))
+    data_keep = scaled_data[keep_rows].reshape((n_keep,Ns))
 
     K = squareform(pdist(data_keep))
     if bw=='adaptive':
@@ -429,12 +429,15 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     sknn.fit(data_keep)
     dists = sknn.kneighbors_graph(data_keep, mode='distance')
 
-    R = dists.copy()
-    K = R.toarray()
-    upper = K[np.triu_indices_from(K, k=1)]
-    upper_no_zeros = upper[upper != 0]
-    median_offdiag = np.median(upper_no_zeros)
-    K = R
+    # Convert to COO format to inspect row and column coordinates
+    R_coo = dists.tocoo()
+
+    # Option A: Exactly replicate your original logic (Strictly Upper Triangle)
+    # This filters for elements where row < col and the distance isn't zero
+    mask = (R_coo.row < R_coo.col) & (R_coo.data != 0)
+    median_offdiag = np.median(R_coo.data[mask])
+
+    K = dists  # Keep K as the sparse matrix
 
     if bw=='knn_adaptive':
 
@@ -475,7 +478,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
 
       
     P = (P.T).maximum(P)  # Ensure symmetry
-    P = P + 1e-10 * np.eye(n)
+    P.setdiag(P.diagonal() + 1e-10)
 
     # evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
 
@@ -483,7 +486,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     # Eigen decomposition
     v0 = rng.uniform(0, 1, n)
     try:
-        evals, evecs = eigsh(P, k=Neig + 1, sigma=1.0001, which="LM", v0=v0)
+        evals, evecs = eigsh(P, k=Neig + 1, which="LA", v0=v0)
     except apnc as e:
         evals = e.eigenvalues
         evecs = e.eigenvectors
@@ -555,7 +558,8 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       Cab = (Va.T @ Vb) / N
       Cbb = (Vb.T @ Vb) / N
 
-      C = Cab @ inv(Cbb, overwrite_a=True)
+      # C = Cab @ inv(Cbb, overwrite_a=True)
+      C = solve(Cbb, Cab.T, assume_a='positive definite').T
       Mu = (Vb @ C.T)
       
       # Compute pab
@@ -569,63 +573,6 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
 
       return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps
 
-
-def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
-
-
-      N = a.shape[0]
-      a_cop = a.copy()
-      b_cop = b.copy()
-
-      neighbor_params = {'n_jobs': -1, 'algorithm':'ball_tree'}
-
-      dm_a = dm.DiffusionMap.from_sklearn(n_evecs=Neig, k=knn, epsilon=bw, alpha=alpha, neighbor_params = neighbor_params)
-      dm_b = dm.DiffusionMap.from_sklearn(n_evecs=Neig, k=knn, epsilon=bw, alpha=alpha, neighbor_params = neighbor_params)
-
-      dm_a_f = dm_a.fit(a)
-      dm_b_f = dm_b.fit(b)
-
-      # Get eigenvectors and eigenvalues of diffusion maps
-      # Vb, Db, a_train_b, bwb, keeps = diff_map(b_cop, Neig, knn, bw, 0.01, Ns, train_frac, plotW=True, klb=klb)
-      # Va, Da, a_train_a, bwa, keeps = diff_map(a_cop, Neig, knn, bw, 0.01, 1, train_frac, keeps, klb=klb)
-
-
-      Va, Da = dm_a_f.evecs, dm_a_f.evals
-      Vb, Db = dm_a_f.evecs, dm_b_f.evals
-
-
-      # TODO make it so that diffusion coordinates from pydiffmap are also consistent by sign
-      # a_signs = np.where(Va[0] < 0, -1, 1)
-      # Va *= a_signs
-      # b_signs = np.where(Vb[0] < 0, -1, 1)
-      # Vb *= b_signs
-
-      # kde = gaussian_kde(a_cop.T, bw_method=bwa/a_cop.std(ddof=1))
-      kde = gaussian_kde(a_cop.T, bw_method='scott')
-      qa = kde(a_cop.T)
-
-      # Calculate kernel mean embeddings
-      N, M1 = Va.shape
-      N, M2 = Vb.shape
-      
-      Va *= Da
-      Vb *= Db
-
-      Cab = (Va.T @ Vb) / N
-      Cbb = (Vb.T @ Vb) / N
-
-      C = Cab @ inv(Cbb, overwrite_a=True)
-      Mu = (Vb @ C.T)
-     
-      # Compute pab
-      
-      pab = (Va @ Mu.T) * qa[:, np.newaxis]
-      
-      # Remove imaginary and negative values
-      pab[pab < 0] = 0
-      pab = np.real(pab)
-      
-      return pab, dm_b, dm_a
 
 # def sample_uniform_domain(data, num_samples, num_bins=100, replace=False):
 #     """
@@ -674,3 +621,27 @@ def rkhs_likelihood_pdm(a, b, Neig, knn, bw, Ns, alpha=0.0):
 #     )
     
 #     return data[sampled_indices], sampled_indices
+def h_weighted_mat(Y, h, w=3):
+    Y = np.asarray(Y)
+    N,k = Y.shape
+    
+    # 1. Determine the center indices for each step
+    centers = np.arange(0, N, h)[:, np.newaxis] # Shape: (M, 1)
+    
+    # 2. Create the window offsets
+    offsets = np.arange(-w, w + 1)              # Shape: (2w + 1,)
+    
+    # 3. Compute all target indices using broadcasting and modulo for periodicity
+    # Shape: (M, 2w + 1)
+    target_indices = (centers + offsets) % N
+    
+    # 4. Construct the transformation matrix W of shape (M, N)
+    M = len(centers)
+    W = np.zeros((M, N))
+    
+    # Row-by-row, add 1 to the positions specified by target_indices
+    row_indices = np.arange(M)[:, np.newaxis]
+    np.add.at(W, (row_indices, target_indices), 1)
+    
+    # 5. The single matrix operation applied to |Y|
+    return W @ np.abs(Y)

@@ -349,6 +349,10 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
                   continue
 
             var_a = np.sum(omega*(xo - xmpf)**2, axis = -1)[:, None]
+            print(hxo.shape)
+            print(hxmpf.shape)
+            print(omega_y.shape)
+            print('\n\n')
             var_a_y = np.sum(omega_y*(hxo - hxmpf)**2, axis = -1)[:, None]
 
             norm = (1 - np.sum(omega**2, axis = -1))[:, None]

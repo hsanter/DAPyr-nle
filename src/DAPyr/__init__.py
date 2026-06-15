@@ -22,6 +22,7 @@ from importlib import reload
 reload(OBS_ERRORS)
 reload(MISC)
 reload(DA)
+reload(MODELS)
 
 class Expt:
       '''Initialize a Data Assimilation experiment and configurable parameters.
@@ -165,6 +166,15 @@ class Expt:
                   case _:
                         raise ValueError(f'Invalid Option Selected for Measurement Operator h: {h_flag}')
 
+
+            if self.getParam('split_l05_state'):
+                  Y_small_perf = MODELS.deconstruct_Z_circulant(xt)[1]
+                  Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.obsParams['small_win'])
+                  Y_small_sum = Y_small_sum_perf + OBS_ERRORS.sample_errors(Y_small_sum_perf, used_obs_err, {'mu': 0, 'sigma': 0.01}, rng)
+                  Y_small_sum = np.where(Y_small_sum >= 0, Y_small_sum , 0)
+                  Y_small_sum = Y_small_sum.reshape(Y_perf.shape)
+
+
             if used_obs_err == 6:
 
                   Y = Y_perf * OBS_ERRORS.sample_errors(Y_perf, used_obs_err, used_obs_err_params, rng)
@@ -173,7 +183,11 @@ class Expt:
             
                   Y = Y_perf + OBS_ERRORS.sample_errors(Y_perf, used_obs_err, used_obs_err_params, rng)
 
-            return xf_0, xt, Y
+
+            if self.getParam('split_l05_state'):
+                  return xf_0, xt, Y, Y_small_sum
+            else:
+                  return xf_0, xt, Y
 
       def _configModel(self):
             model_flag = self.getParam('model_flag')
@@ -235,11 +249,22 @@ class Expt:
             h_flag = self.getParam('h_flag')
             H = self.getParam("H")
             #Do model spinup
-            xf_0, xt, Y = self._spinup(Nx, Ne, dt, T, tau, self.getParam('funcptr'), self.getParam('NumPool'), self.getParam('sig_y'), h_flag, H)
 
-            self.states['xf_0'] = xf_0
-            self.states['xt'] = xt
-            self.states['Y'] = Y
+            if self.getParam('split_l05_state'):
+                  xf_0, xt, Y, Y_small_sum = self._spinup(Nx, Ne, dt, T, tau, self.getParam('funcptr'), self.getParam('NumPool'), self.getParam('sig_y'), h_flag, H)
+
+                  self.states['xf_0'] = xf_0
+                  self.states['xt'] = xt
+                  self.states['Y'] = Y
+                  self.states['Y_small_sum'] = Y_small_sum
+
+            else:
+                  xf_0, xt, Y = self._spinup(Nx, Ne, dt, T, tau, self.getParam('funcptr'), self.getParam('NumPool'), self.getParam('sig_y'), h_flag, H)
+
+                  self.states['xf_0'] = xf_0
+                  self.states['xt'] = xt
+                  self.states['Y'] = Y
+                  
 
 
             #Initialize Variables for storage
@@ -321,6 +346,7 @@ class Expt:
             self.obsParams['T_train'] = 50
             self.obsParams['tof'] = 1
             self.obsParams['Nl'] = 1
+            self.obsParams['small_win'] = 3
             self.obsParams['Nb'] = 0
             self.obsParams['klb'] = 0.0
             self.obsParams['train_frac'] = 1.0
@@ -1214,6 +1240,8 @@ def runDA(expt: Expt, maxT : int = None):
 
       # Time Loop
       xf_0, xt, Y = expt.getStates()
+      if expt.getParam('split_l05_state'):
+            Y_small_sum = expt.getParam('Y_small_sum')
       xf = copy.deepcopy(xf_0)
 
       # Retrieve likelihood function (for use with LPF only)
@@ -1300,11 +1328,18 @@ def runDA(expt: Expt, maxT : int = None):
                                           x_train[:Ns,ts+s-1] = Htemp @ random_member
                                           
                                           
-                              if nle_type == 4 or nle_type == 5:
-                                    y_train[:Nl,ts:te] = Y[0::tof,t,:].T
+
+                              if expt.getParam('split_l05_state'):
+                                    if nle_type == 4 or nle_type == 5:
+                                          y_train[:Nl,ts:te] = Y_small_sum[0::tof,t,:].T
+                                    else:
+                                          raise ValueError('split l05 state selected but asking for innovations! no forward operator!')
                               else:
-                                    # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
-                                    y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
+                                    if nle_type == 4 or nle_type == 5:
+                                          y_train[:Nl,ts:te] = Y[0::tof,t,:].T
+                                    else:
+                                          # HMS 6/11/25 - y is Ny x T x dummy ; note that this might get messed up when Nl > 0!
+                                          y_train[:Nl,ts:te] = Y[0::tof,t,:].T - x_train[Nb,ts:te]
                         else:
 
                               hxb_nbrs = np.zeros((Ns, Ne, Ny))
@@ -1347,7 +1382,10 @@ def runDA(expt: Expt, maxT : int = None):
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
-                                          obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          if expt.getParam('split_l05_state'):
+                                                obs_emb = MISC.diff_map_ext_nystrom(Y_small_sum[k,t,:].T,y_train[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                          else:
+                                                obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           obs_emb *= eval_y
                                           ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                     for n in range(Ne):
@@ -1388,7 +1426,13 @@ def runDA(expt: Expt, maxT : int = None):
                               if debug_nle_noDA:
                                     xa = xf
                               else:
-                                    xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+                                    if expt.getParam('split_l05_state'):
+                                          print(xf.shape)
+                                          print(hxb_nbrs.shape)
+                                          print(Y_small_sum[:,t].shape)
+                                          xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y_small_sum[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+                                    else:
+                                          xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
 
 
 
@@ -1421,10 +1465,16 @@ def runDA(expt: Expt, maxT : int = None):
                               for j in range(0, Ny, tof):
                                     l += 1
                                     x_train[:, ind[l - 1]] = hxtemp[:, l - 1]
-                                    if nle_type in [4,5]:
-                                          y_train[:Nl, ind[l - 1]] = Y[j, t,:]
+                                    if expt.getParam('split_l05_state'):
+                                          if nle_type == 4 or nle_type == 5:
+                                                y_train[:Nl,ind[l-1]] = Y_small_sum[j,t,:]
+                                          else:
+                                                      raise ValueError('split l05 state selected but asking for innovations! no forward operator!')
                                     else:
-                                          y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
+                                          if nle_type in [4,5]:
+                                                y_train[:Nl, ind[l - 1]] = Y[j, t,:]
+                                          else:
+                                                y_train[:Nl, ind[l - 1]] = Y[j, t, :] - hxtemp[Nb, l - 1]
 
                         
 

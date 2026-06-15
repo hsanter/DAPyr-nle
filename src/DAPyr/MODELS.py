@@ -99,22 +99,36 @@ def make_rhs_l05(kwargs):
       return rhs
 
 
-def deconstruct_Z(Zn, I = 12):
-      I = int(I)
-      alpha = (3*I*I + 3)/(2*I*I*I + 4*I)
-      beta = (2*I*I + 1)/(I*I*I*I + 2*I*I)
-      Nx = len(Zn)
-      z0 = np.concatenate([Zn, Zn, Zn])
-      Xn = np.empty_like(Zn)
-
-      if I > 1:
-            Is = np.arange(-(I-1), I)
-            alpha_beta = alpha - beta*np.abs(Is)
-            for m in range(Nx):
-                  mi = m + Nx
-                  Xn[m] = np.sum(alpha_beta*z0[mi-(I-1):mi + I]) + ((alpha -beta*np.abs(-I))*z0[mi - I] + (alpha - beta*np.abs(I))*z0[mi + I])/2
-            Yn = Zn - Xn
-      else:
-            Xn = Zn
-            Yn = np.zeros_like(Zn)
-      return Xn, Yn
+def deconstruct_Z_circulant(Zn_matrix, I=12):
+    Zn_matrix = np.asarray(Zn_matrix)
+    Nx, k_cols = Zn_matrix.shape
+    I = int(I)
+    
+    if I > 1:
+        alpha = (3*I*I + 3)/(2*I*I*I + 4*I)
+        beta = (2*I*I + 1)/(I*I*I*I + 2*I*I)
+        
+        # 1. Create the base filter weights
+        offsets = np.arange(-I, I + 1)
+        weights = alpha - beta * np.abs(offsets)
+        weights[0] /= 2
+        weights[-1] /= 2
+        
+        # 2. Map weights to a baseline row of length Nx using periodic modulo
+        base_row = np.zeros(Nx)
+        np.add.at(base_row, offsets % Nx, weights)
+        
+        # 3. Generate the Nx x Nx Circulant Transformation Matrix
+        rows = np.arange(Nx)[:, np.newaxis]
+        cols = np.arange(Nx)
+        C = base_row[(cols - rows) % Nx]
+        
+        # 4. Apply the single matrix multiplication to all columns at once
+        # (Nx x Nx) @ (Nx x k_cols) -> (Nx x k_cols)
+        Xn = C @ Zn_matrix
+        Yn = Zn_matrix - Xn
+    else:
+        Xn = Zn_matrix.copy()
+        Yn = np.zeros_like(Zn_matrix)
+        
+    return Xn, Yn
