@@ -136,7 +136,8 @@ def get_reg(Nx, Ne, C, hw, Neff, res, beta_max):
 def sampling(x, w, Ne):
 
     # Sort sample
-    b = np.argsort(x)
+    # b = np.argsort(x)
+    b = np.arange(len(w))
     
     # Apply deterministic sampling by taking value at every 1/Ne quantile
     cum_weight = np.concatenate(([0], np.cumsum(w[b])))

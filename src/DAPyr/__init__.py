@@ -1427,9 +1427,6 @@ def runDA(expt: Expt, maxT : int = None):
                                     xa = xf
                               else:
                                     if expt.getParam('split_l05_state'):
-                                          print(xf.shape)
-                                          print(hxb_nbrs.shape)
-                                          print(Y_small_sum[:,t].shape)
                                           xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y_small_sum[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
                                     else:
                                           xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
