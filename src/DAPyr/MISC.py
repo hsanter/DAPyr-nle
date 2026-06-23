@@ -622,12 +622,12 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
 #     )
     
 #     return data[sampled_indices], sampled_indices
-def h_weighted_mat(Y, h, w=3):
+def h_weighted_mat(Y, stride, w=3):
     Y = np.asarray(Y)
     N,k = Y.shape
     
     # 1. Determine the center indices for each step
-    centers = np.arange(0, N, h)[:, np.newaxis] # Shape: (M, 1)
+    centers = np.arange(0, N, stride)[:, np.newaxis] # Shape: (M, 1)
     
     # 2. Create the window offsets
     offsets = np.arange(-w, w + 1)              # Shape: (2w + 1,)
@@ -642,7 +642,8 @@ def h_weighted_mat(Y, h, w=3):
     
     # Row-by-row, add 1 to the positions specified by target_indices
     row_indices = np.arange(M)[:, np.newaxis]
-    np.add.at(W, (row_indices, target_indices), 1)
+    np.add.at(W, (row_indices, target_indices), 1/(2*w + 1))
     
     # 5. The single matrix operation applied to |Y|
+    np.save('ha_dapy.npy', W)
     return W @ np.abs(Y)

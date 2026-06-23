@@ -140,7 +140,7 @@ class Expt:
       
             #Create Model Truth
             xt = np.zeros((Nx, T))
-            xt[:,0], model_error = MODELS.model(xt_0, dt, 100, funcptr)
+            xt[:,0], model_error = MODELS.model(xt_0, dt, 115, funcptr)
 
             if model_error != 0:
                   warnings.warn('Model integration failed.')
@@ -163,6 +163,10 @@ class Expt:
                         Y_perf = np.matmul(H, xt**2 )[:, :, np.newaxis] 
                   case 2:
                         Y_perf = np.matmul(H, np.log(np.abs(xt)))[:, :, np.newaxis] 
+                  case 3:
+                        Y_small_perf = MODELS.deconstruct_Z_circulant(xt)[1]
+                        Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.obsParams['small_win'])
+                        Y_perf = Y_small_sum_perf[:, :, np.newaxis]
                   case _:
                         raise ValueError(f'Invalid Option Selected for Measurement Operator h: {h_flag}')
 
@@ -170,7 +174,7 @@ class Expt:
             if self.getParam('split_l05_state'):
                   Y_small_perf = MODELS.deconstruct_Z_circulant(xt)[1]
                   Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.obsParams['small_win'])
-                  Y_small_sum = Y_small_sum_perf + OBS_ERRORS.sample_errors(Y_small_sum_perf, used_obs_err, {'mu': 0, 'sigma': 0.01}, rng)
+                  Y_small_sum = Y_small_sum_perf + OBS_ERRORS.sample_errors(Y_small_sum_perf, used_obs_err, {'mu': 0, 'sigma': 0.1}, rng)
                   Y_small_sum = np.where(Y_small_sum >= 0, Y_small_sum , 0)
                   Y_small_sum = Y_small_sum.reshape(Y_perf.shape)
 
@@ -1121,6 +1125,8 @@ def runDA(expt: Expt, maxT : int = None):
       maxiter = expt.getParam('maxiter')
       HC =  np.matmul(C,H.T)
       gamma = expt.getParam('gamma')
+      obf = expt.getParam('obf')
+      small_win = expt.getParam('small_win')
       prescribed_obs_err = expt.getParam('prescribed_obs_err')
       prescribed_obs_err_params = expt.getParam('prescribed_obs_err_params')
       force_hx_identity = expt.getParam('force_hx_identity')
@@ -1282,13 +1288,19 @@ def runDA(expt: Expt, maxT : int = None):
                               hx = np.matmul(H, np.square(xf))
                         case 2:
                               hx = np.matmul(H, np.log(np.abs(xf)))
+                        case 3:
+                              hx = MODELS.deconstruct_Z_circulant(xf)[1]
+                              # print(xf.shape)
+                              # print(hx.shape)
+                              hx = MISC.h_weighted_mat(hx, obf, small_win)
+                              # print(f'final shape: {hx.shape}')
+
 
             hxm = np.mean(hx, axis = -1)[:, None]
             qaqcpass = np.zeros((Ny,))
 
             #qaqc pass
             if qc_flag:
-
                   for i in range(Ny):
                         d = np.abs((Y[i, t, :] - hxm[i, :])[0])
                         if d > 4 * np.sqrt(np.var(hx[i, :]) + var_y):
@@ -1530,6 +1542,8 @@ def runDA(expt: Expt, maxT : int = None):
             #      if model_error != 0:
             #           expt.modExpt({'status': 'run model error'})
             #           return expt.getParam('status')
+            # if t == 89:
+            #       return
 
       pool.close()
       # Save everything into a nice xarray format if SV calculations are on
