@@ -645,5 +645,4 @@ def h_weighted_mat(Y, stride, w=3):
     np.add.at(W, (row_indices, target_indices), 1/(2*w + 1))
     
     # 5. The single matrix operation applied to |Y|
-    np.save('ha_dapy.npy', W)
     return W @ np.abs(Y)
