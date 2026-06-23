@@ -326,7 +326,6 @@ class Expt:
             self.obsParams['gamma'] = 0.00
 
             #LPF Parameters
-            self.obsParams['mixing_gamma'] = 0.3
             self.obsParams['kddm_flag'] = 0
             self.obsParams['min_res'] = 0.0
             self.obsParams['maxiter'] = 1
@@ -516,7 +515,6 @@ class Expt:
                   
                   "-----Local Particle Filter (LPF)-----\n"
                   f"roi_pf: {self.getParam('roi_pf')} # Particle Filter Localization Radius\n"
-                  f"mixing_gamma: {self.getParam('mixing_gamma')} # Mixing coefficient for LPF\n"
                   f"kddm_flag: {self.getParam('kddm_flag')} # Determine whether to apply additional kernal density estimator in LPF step\n"
                   "      0: Off\n"
                   "      1: On\n"
@@ -1119,7 +1117,6 @@ def runDA(expt: Expt, maxT : int = None):
       tau = expt.getParam('tau')
       C = expt.getParam('C')
       Nt_eff = expt.getParam('Nt_eff')
-      mixing_gamma = expt.getParam('mixing_gamma')
       min_res = expt.getParam('min_res')
       kddm_flag = expt.getParam('kddm_flag')
       maxiter = expt.getParam('maxiter')
@@ -1311,7 +1308,7 @@ def runDA(expt: Expt, maxT : int = None):
                   case 0: #Deterministic EnKF
                         xa, e_flag = DA.EnSRF_update(xf, hx, xm ,hxm, Y[:, t], C, HC, var_y, gamma, e_flag, qaqcpass)
                   case 1: #LPF
-                        xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                        xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                   case 2: # Nothing
                         xa = xf
                   case 3: # LPF using kernel embeddings
@@ -1319,7 +1316,7 @@ def runDA(expt: Expt, maxT : int = None):
                               if debug_nle_noDA:
                                     xa = xf
                               else:
-                                    xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, mixing_gamma, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                                    xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                               ts = t * Ny // tof
                               te = ts + Ny // tof
                               s = 0 # sample # from this cycle
@@ -1439,9 +1436,9 @@ def runDA(expt: Expt, maxT : int = None):
                                     xa = xf
                               else:
                                     if expt.getParam('split_l05_state'):
-                                          xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y_small_sum[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+                                          xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y_small_sum[:, t], H, C, Nt_eff*Ne, wo, min_res, kddm_flag, e_flag)
                                     else:
-                                          xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, mixing_gamma, min_res, kddm_flag, e_flag)
+                                          xa, e_flag = DA.lpf_update_keest_no_iter(xf, hxb_nbrs, Y[:, t], H, C, Nt_eff*Ne, wo, min_res, kddm_flag, e_flag)
 
 
 

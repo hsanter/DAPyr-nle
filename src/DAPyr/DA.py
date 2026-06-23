@@ -95,7 +95,7 @@ def EnSRF_update(xf : np.ndarray, hx : np.ndarray,
 def lpf_update(x : np.ndarray, hx : np.ndarray, 
                Y : np.ndarray, 
                H : np.ndarray, C_pf : np.ndarray, 
-               N_eff : float, gamma : float, 
+               N_eff : float, 
                min_res : int, maxiter : int, 
                kddm_flag : int,  
                e_flag : int, qcpass : np.ndarray,
@@ -116,8 +116,6 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
         Localization matrix of size Ny x Nx in state-space
     N_eff : float
         Effective Ensemble Size
-    gamma : float
-        Mixing coefficient parameter
     min_res : float
         Minimum residual for computing betas
     maxiter : int
@@ -157,10 +155,11 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
     HCH = HCH[:, qcpass == 0]
     Ny = len(Y)
 
+    epsilon=1e-300
     max_res = 1.0
     beta = np.ones((Nx,))
     beta_y = np.ones((Ny,))
-    beta_max = 1e100
+    
     res = np.ones(beta.shape)
     res_y = np.ones(beta_y.shape)
     niter = 0
@@ -186,36 +185,36 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
         lomega = np.zeros_like(omega)
         lomega_y = np.zeros_like(omega_y)
 
-        wo = L(Y, hxo) + 1E-40
+        wo = L(Y, hxo)
         wo = wo/np.sum(wo, axis = -1)[:, None]
 
         if np.any(np.isnan(wo)):
             e_flag = 1
             return np.nan, e_flag
 
-        beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y, beta_max)
-        beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res, beta_max)
+        beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y)
+        beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res)
         
         wo_ind = np.where(1 < 0.98*Ne*np.sum(wo**2, axis = -1))[0]
         #Obs loop
         for i in wo_ind:
-            beta_ind = np.where(beta != beta_max)[0]
+            beta_ind = np.where(beta != 0)[0]
             wt = Ne*wo[i, :] - 1 #Ne Array
             C = C_pf[i, beta_ind] #Nxb array
             dum = np.zeros((len(beta_ind), Ne))
             if np.any(C == 1.0):
-                dum[C==1.0, :] = np.log(Ne*wo[i, :]) 
-            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1)
+                dum[C==1.0, :] = np.log(Ne*wo[i, :] + epsilon) 
+            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
             lomega[beta_ind, :] = lomega[beta_ind, :] - dum
             lomega[beta_ind, :] = lomega[beta_ind, :] - np.min(lomega[beta_ind, :], axis = -1)[:, None]
 
-            beta_ind = np.where(beta_y != beta_max)[0]
+            beta_ind = np.where(beta_y != 0)[0]
             wt = Ne*wo[i, :] - 1 #Ne Array
             C = HCH[i, beta_ind] #Nxb array
             dum = np.zeros((len(beta_ind), Ne))
             if np.any(C == 1.0):
-                dum[C==1.0, :] = np.log(Ne*wo[i, :]) 
-            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1)
+                dum[C==1.0, :] = np.log(Ne*wo[i, :] + epsilon) 
+            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
             lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - dum
             lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - np.min(lomega_y[beta_ind, :], axis = -1)[:, None]
 
@@ -223,8 +222,8 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
             #lomega is Nx x Ne
             #omega needs to be Nx x Ne
 
-            omega = np.exp(-lomega / beta[:, None])
-            omega_y =  np.exp(-lomega_y / beta_y[:, None])
+            omega = np.exp(-lomega * beta[:, None])
+            omega_y =  np.exp(-lomega_y * beta_y[:, None])
 
             omegas_y = np.sum(omega_y, axis = -1)[:, None] #Sum over Ensemble Members
             omegas = np.sum(omega, axis = -1)[:, None]
@@ -246,8 +245,8 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
             var_a_y = var_a_y/norm
             #ks = np.random.choice(Ne, Ne, p = omega_y[i, :], replace=True)
             ks = MISC.sampling(hxo[i, :], omega_y[i, :], Ne)
-            x = _pf_merge(x, xo[:, ks], C_pf[i, :], Ne, xmpf, var_a, gamma)
-            hx = _pf_merge(hx, hxo[:, ks], HCH[i, :], Ne, hxmpf, var_a_y, gamma)
+            x = _pf_merge(x, xo[:, ks], C_pf[i, :] * beta, Ne, xmpf, var_a)
+            hx = _pf_merge(hx, hxo[:, ks], HCH[i, :] * beta_y, Ne, hxmpf, var_a_y)
         if kddm_flag == 1:
             for j in range(Nx):
                 if np.var(x[j, :], ddof = 1) > 0:
@@ -266,19 +265,19 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
       Y : np.ndarray, 
       H : np.ndarray, C_pf : np.ndarray, 
       N_eff : float, wo: np.ndarray,
-      gamma : float, 
       min_res : int,  
       kddm_flag : int,  
       e_flag : int):
     
       Nx, Ne = x.shape
-      HCH = np.matmul(C_pf, H.T)*(1 - 1e-5)
+      HCH = np.matmul(C_pf, H.T)
 
       Ny = len(Y)
 
+      epsilon=1e-300
       beta = np.ones((Nx,))
       beta_y = np.ones((Ny,))
-      beta_max = 1e100
+      
       res = np.ones(beta.shape)
       res_y = np.ones(beta_y.shape)
       
@@ -304,29 +303,29 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
             e_flag = 1
             return np.nan, e_flag
 
-      beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y, beta_max)
-      beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res, beta_max)
+      beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y)
+      beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res)
       wo_ind = np.where(1 < 0.98*Ne*np.sum(wo**2, axis = -1))[0]
 
       #Obs loop
       for i in wo_ind:
-            beta_ind = np.where(beta != beta_max)[0]
+            beta_ind = np.where(beta != 0)[0]
             wt = Ne*wo[i, :] - 1 #Ne Array
             C = C_pf[i, beta_ind] #Nxb array
             dum = np.zeros((len(beta_ind), Ne))
             if np.any(C == 1.0):
-                  dum[C==1.0, :] = np.log(Ne*wo[i, :]) 
-            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1)
+                  dum[C==1.0, :] = np.log(Ne*wo[i, :] + epsilon) 
+            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
             lomega[beta_ind, :] = lomega[beta_ind, :] - dum
             lomega[beta_ind, :] = lomega[beta_ind, :] - np.min(lomega[beta_ind, :], axis = -1)[:, None]
 
-            beta_ind = np.where(beta_y != beta_max)[0]
+            beta_ind = np.where(beta_y != 0)[0]
             wt = Ne*wo[i, :] - 1 #Ne Array
             C = HCH[i, beta_ind] #Nxb array
             dum = np.zeros((len(beta_ind), Ne))
             if np.any(C == 1.0):
-                  dum[C==1.0, :] = np.log(Ne*wo[i, :]) 
-            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1)
+                  dum[C==1.0, :] = np.log(Ne*wo[i, :] + epsilon) 
+            dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
             lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - dum
             lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - np.min(lomega_y[beta_ind, :], axis = -1)[:, None]
 
@@ -334,8 +333,8 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
             #lomega is Nx x Ne
             #omega needs to be Nx x Ne
 
-            omega = np.exp(-lomega / beta[:, None])
-            omega_y =  np.exp(-lomega_y / beta_y[:, None])
+            omega = np.exp(-lomega * beta[:, None])
+            omega_y =  np.exp(-lomega_y * beta_y[:, None])
 
             omegas_y = np.sum(omega_y, axis = -1)[:, None] #Sum over Ensemble Members
             omegas = np.sum(omega, axis = -1)[:, None]
@@ -362,11 +361,11 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
                 ks = MISC.sampling(hxo[:,i, :], omega_y[i, :], Ne)
             else:
                 ks = MISC.sampling(hxo[i, :], omega_y[i, :], Ne)
-            x = _pf_merge(x, xo[:, ks], C_pf[i, :], Ne, xmpf, var_a, gamma)
+            x = _pf_merge(x, xo[:, ks], C_pf[i, :] * beta, Ne, xmpf, var_a)
             if len(hxmpf.shape) == 3:
-                hx = _pf_merge(hx, hxo[:, :, ks], HCH[i, :], Ne, hxmpf, var_a_y, gamma)
+                hx = _pf_merge(hx, hxo[:, :, ks], HCH[i, :] * beta_y, Ne, hxmpf, var_a_y)
             else:
-                hx = _pf_merge(hx, hxo[:, ks], HCH[i, :], Ne, hxmpf, var_a_y, gamma)
+                hx = _pf_merge(hx, hxo[:, ks], HCH[i, :] * beta_y, Ne, hxmpf, var_a_y)
 
       if kddm_flag == 1:
             for j in range(Nx):
@@ -381,7 +380,7 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
       return x, e_flag
 
 
-def _pf_merge(x, xs, loc, Ne, xmpf, var_a, alpha):
+def _pf_merge(x, xs, loc, Ne, xmpf, var_a):
     '''Performs the merge step of the Local Particle Filter
     
     Parameters
@@ -408,48 +407,28 @@ def _pf_merge(x, xs, loc, Ne, xmpf, var_a, alpha):
     if np.all(loc == 1):
         xmpf = np.mean(xs, axis = -1)[:, None]
         var_a = np.var(xs, axis = -1, ddof = 1)[:, None]
-    c = (1-loc)/loc
+    r1 = loc
+    r2 = 1-loc
     xs = xs - xmpf
     x = x - xmpf
 
-    var_a = var_a[:, 0]
-    c2 = c**2
-    v1 = np.sum(xs**2, axis = -1)
-    v2 = np.sum(x**2, axis = -1)
-    v3 = np.sum(x*xs, axis = -1)
-
-    r1 = v1 + c2*v2 + 2*c*v3
-
-    r2 = c2/r1
-
-    r1 = alpha*np.sqrt((Ne-1)*var_a/r1)
-    r2 = np.sqrt((Ne-1)*var_a*r2)
-
-    if alpha < 1:
-        m1 = np.mean(xs, axis = -1)
-        m2 = np.mean(x, axis = -1)
-        v1 = v1 - Ne*(m1**2)
-        v2 = v2 - Ne*(m2**2)
-        v3 = v3 - Ne*(m1*m2)
-        T1 = v2
-        T2 = 2*(r1*v3 + r2*v2)
-        T3 = v1*(r1**2) + v2*(r2**2) + 2*v3*r1*r2 - (Ne-1)*var_a
-        alpha2 = (-T2+np.sqrt((T2**2) - 4*T1*T3))/(2*T1)
-        r2 = r2+alpha2
-    
-    
+    #TODO 6/23 - updated code in the ELSE block to match JP updates to LPF - haven't yet tested the version for multivariate h(x) inside the IF block.
     if(len(xs.shape)) == 3:
         xa = xmpf + np.transpose(r1[:, None],[0,2,1])*xs + np.transpose(r2[:, None], [0,2,1])*x
         pfm = (np.sum(xa, axis = -1)/Ne)[:, None]
         pfm = np.transpose(pfm, [0,2,1])
-        xa = xmpf + (xa - pfm)
+
+        pfv = (np.sum((xa - pfm)**2, axis=-1) / (Ne - 1))[:, None]
+
+        ratio = np.divide(var_a, pfv, out=np.ones_like(pfv, dtype=float), where=(pfv > 0))
+        xa = xmpf + (xa - pfm) * np.sqrt(ratio)
+
     else: 
         xa = xmpf + r1[:, None]*xs + r2[:, None]*x
         pfm = (np.sum(xa, axis = -1)/Ne)[:, None]
-        xa = xmpf + (xa - pfm)
-
-    nanind = np.where(np.isnan(xa))
-    xa[nanind] = xmpf[nanind[0], 0] + xs[nanind]
+        pfv = (np.sum((xa - pfm)**2, axis=-1) / (Ne - 1))[:, None]
+        ratio = np.divide(var_a, pfv, out=np.ones_like(pfv, dtype=float), where=(pfv > 0))
+        xa = xmpf + (xa - pfm) * np.sqrt(ratio)
 
     return xa
 

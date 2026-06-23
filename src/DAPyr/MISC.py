@@ -49,7 +49,6 @@ def create_periodic(sigma, m, dx):
 def find_beta(sum_exp, Neff):
     #sum_exp is of size Ne
     Ne = sum_exp.shape[0]
-    beta_max = np.max([1, 10*np.max(sum_exp)])
     w = np.exp(-sum_exp)
     ws = np.sum(w)
     if ws > 0:
@@ -62,23 +61,23 @@ def find_beta(sum_exp, Neff):
         return
 
     if Neff_init < Neff or ws == 0:
-        ks, ke = 1, beta_max
+        ks, ke = 0,1
         tol = 1E-5
         #Start Bisection Method
 
         for i in range(1000):
-            w = np.exp(-sum_exp/ks)
+            w = np.exp(-sum_exp*ks)
             w = w/np.sum(w)
             fks = Neff - 1/np.sum(w**2)
             if np.isnan(fks):
                 fks = Neff-1
             
-            w = np.exp(-sum_exp/ke)
+            w = np.exp(-sum_exp*ke)
             w = w/np.sum(w)
             fke = Neff - 1/np.sum(w**2)
 
             km = (ke + ks)/2
-            w = np.exp(-sum_exp/km)
+            w = np.exp(-sum_exp*km)
             w = w/np.sum(w)
             fkm = Neff - 1/np.sum(w**2)
             if np.isnan(fkm):
@@ -92,7 +91,7 @@ def find_beta(sum_exp, Neff):
                 ke = km
             
         beta = km
-        w = np.exp(-sum_exp/beta)
+        w = np.exp(-sum_exp*beta)
         w = w/np.sum(w)
         Nf = 1/np.sum(w**2)
     else:
@@ -101,10 +100,11 @@ def find_beta(sum_exp, Neff):
 
 
 
-def get_reg(Nx, Ne, C, hw, Neff, res, beta_max):
-    beta = np.zeros((Nx, ))
+def get_reg(Nx, Ne, C, hw, Neff, res):
+    epsilon = 1E-300
+    beta = np.ones((Nx, ))
     res_ind = np.where(res > 0.0)[0]
-    beta[res <= 0.0] = beta_max
+    beta[res <= 0.0] = 0.0
     Ny, Ne = hw.shape
     #hw is Ny x Ne
     for i in res_ind:
@@ -112,19 +112,18 @@ def get_reg(Nx, Ne, C, hw, Neff, res, beta_max):
         loc_one = np.where(C[:, i] == 1)[0]
         loc_not_one = np.where(C[:, i] != 1)[0]
         dum = np.empty_like(hw)
-        dum[loc_one, :] = np.log(Ne*hw[loc_one, :]) 
-        dum[loc_not_one, :] = np.log((Ne*hw[loc_not_one, :] - 1)*C[loc_not_one, i, None] + 1)
+        dum[loc_one, :] = np.log(Ne*hw[loc_one, :] + epsilon) 
+        dum[loc_not_one, :] = np.log((Ne*hw[loc_not_one, :] - 1)*C[loc_not_one, i, None] + 1 + epsilon)
         for y in range(Ny):
             wo = wo - dum[y, :]
             wo = wo - np.min(wo)
         beta[i] = find_beta(wo, Neff)
-        if res[i] < 1/beta[i]:
-            beta[i] = 1/res[i]
+        if res[i] < beta[i]:
+            beta[i] = res[i]
             res[i] = 0
         else:
-            res[i] = res[i] - 1/beta[i]
+            res[i] = res[i] - beta[i]
 
-        beta[i] = np.min([beta[i], beta_max])
     return beta, res
 
 
