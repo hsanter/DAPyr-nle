@@ -58,7 +58,8 @@ def find_beta(sum_exp, Neff):
         Neff_init = 1
     
     if Neff == 1:
-        return
+        beta = 1
+        return beta
 
     if Neff_init < Neff or ws == 0:
         ks, ke = 0,1
@@ -82,7 +83,7 @@ def find_beta(sum_exp, Neff):
             fkm = Neff - 1/np.sum(w**2)
             if np.isnan(fkm):
                 fkm = Neff-1
-            if (ke-ks)/2 < tol:
+            if abs(fke-fks) < tol:
                 break
 
             if fkm*fks > 0:
@@ -94,19 +95,36 @@ def find_beta(sum_exp, Neff):
         w = np.exp(-sum_exp*beta)
         w = w/np.sum(w)
         Nf = 1/np.sum(w**2)
+
+        if Nf <= Neff - 1 or np.isnan(Nf):
+            beta = 0
+        
     else:
         beta = 1
     return beta
 
 
 
-def get_reg(Nx, Ne, C, hw, Neff, res):
-    epsilon = 1E-300
+def get_reg(Nx, Ne, C, hw, Neff, res, wc=100):
+
+    # print('in get reg')
+    # print(Nx)
+    # print(Ne)
+    # print(C.shape)
+    # print(hw.shape)
+    # print(Neff)
+    # print(res.shape)
+    # print(wc)
+      
+    epsilon = 1e-300
     beta = np.ones((Nx, ))
     res_ind = np.where(res > 0.0)[0]
     beta[res <= 0.0] = 0.0
-    Ny, Ne = hw.shape
+    Ny = hw.shape[0]
     #hw is Ny x Ne
+
+
+    
     for i in res_ind:
         wo = 0
         loc_one = np.where(C[:, i] == 1)[0]
@@ -117,12 +135,59 @@ def get_reg(Nx, Ne, C, hw, Neff, res):
         for y in range(Ny):
             wo = wo - dum[y, :]
             wo = wo - np.min(wo)
+            wo[wo > wc] = wc
         beta[i] = find_beta(wo, Neff)
         if res[i] < beta[i]:
             beta[i] = res[i]
             res[i] = 0
         else:
             res[i] = res[i] - beta[i]
+
+    return beta, res
+
+def get_reg2(Nx, Ne, C, hw, Neff, res, wc=100):
+    
+
+    epsilon = 1e-300
+    Ny = hw.shape[0]
+    # Initialize beta safely
+    beta = np.zeros(Nx)
+
+    for j in range(Nx):
+        
+        # Exact MATLAB control flow: Nothing to do if min_res has already been reached
+        if res[j] <= 0.0:
+            beta[j] = 0.0
+            continue
+            
+        # Vectorize the 'dum' calculation for all 'Ny' rows at once for speed.
+        # C[:, j, None] reshapes to (Ny, 1) to broadcast perfectly against hw (Ny, Ne)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            val = (Ne * hw - 1.0) * C[:, j, None] + 1.0 + epsilon
+            dum_matrix = np.log(val)
+        
+        # Initialize weight log array
+        wo = np.zeros(Ne) 
+        
+        for i in range(Ny):
+            wo = wo - dum_matrix[i, :]
+            
+            # Use nanmin to exactly mimic MATLAB's NaN-ignoring min()
+            wo = wo - np.nanmin(wo)
+            
+            # Cap at wc
+            wo[wo > wc] = wc
+            
+        # Calculate beta from log of weights
+        # (Assuming find_beta is defined elsewhere in your script)
+        beta[j] = find_beta(wo, Neff)
+        
+        # Fix beta if value exceeds residual
+        if res[j] < beta[j]:
+            beta[j] = res[j]
+            res[j] = 0.0
+        else:
+            res[j] = res[j] - beta[j]
 
     return beta, res
 
@@ -136,6 +201,7 @@ def sampling(x, w, Ne):
 
     # Sort sample
     # b = np.argsort(x)
+    # i replaced the above w the below when trying to get this to work with Nb > 0. was that necessary?
     b = np.arange(len(w))
     
     # Apply deterministic sampling by taking value at every 1/Ne quantile
@@ -148,22 +214,28 @@ def sampling(x, w, Ne):
     k = 1
     for n in range(Ne):
         frac = base + (n / (Ne - offset))
-        while cum_weight[k] < frac:
-            k += 1
-        ind[n] = k - 1
+        while True:
+              if (cum_weight[k-1] < frac) and (frac <= cum_weight[k]):
+                    ind[n] = k - 1
+                    break
+              else:
+                    k += 1
+
     ind = b[ind]
 
     # Replace removed particles with duplicated particles
     ind2 = -999*np.ones(Ne, dtype=int)
+
+    ind_list = ind.tolist()
+
     for n in range(Ne):
-        if np.sum(ind == n) != 0:
+        if n in ind_list:
             ind2[n] = n
-            dum = np.where(ind == n)[0]
-            ind = np.delete(ind, dum[0])
+            ind_list.remove(n)  
     
 
     ind0 = np.where(ind2 == -999)[0]
-    ind2[ind0] = ind
+    ind2[ind0] = ind_list
     ind = ind2
     
     return ind
@@ -198,6 +270,48 @@ def kddm(x, xo, w):
     
     if np.isnan(qf).any():
         warnings.warn("NaN values detected in qf")
+    
+    return xa
+
+def kddm_fast(x, xo, w):
+    # Ensure inputs are 1D numpy arrays to guarantee expected broadcasting
+    x = np.asarray(x).flatten()
+    xo = np.asarray(xo).flatten()
+    w = np.asarray(w).flatten()
+    
+    Ne = len(w)
+    
+    # 1. Sort xo and align w 
+    sort_idx = np.argsort(xo)
+    xd = xo[sort_idx]
+    w_sort = w[sort_idx]
+    
+    # 2. Match MATLAB's bandwidth and exact std() behavior (ddof=1)
+    bw_scale = 1.0 * np.sqrt(2) * np.std(x, ddof=1) * (Ne ** -0.2)
+    
+    # 3. Prior Calculations (Vectorized matrix broadcasting)
+    # x[None, :] - x[:, None] perfectly perfectly mimics MATLAB's (x' - x)
+    Z_prior = (x[None, :] - x[:, None]) / bw_scale
+    erf_prior = Z_prior / np.sqrt(1.0 + Z_prior * Z_prior)
+    
+    # np.sum(..., axis=1) matches MATLAB's sum(..., 2) row-wise summation
+    qf = 0.5 + 0.5 * np.sum(erf_prior, axis=1) / Ne
+    
+    # 4. Posterior Calculations
+    # xd[:, None] - xd[None, :] mimics MATLAB's (xd - xd') 
+    Z_post = (xd[:, None] - xd[None, :]) / bw_scale
+    erf_post = Z_post / np.sqrt(1.0 + Z_post * Z_post)
+    
+    # Matrix multiplication (@) mimics MATLAB's vector * matrix multiplication
+    cdfxa = 0.5 + 0.5 * (w_sort @ erf_post)
+    
+    # 5. Monotonicity Hack (Match exactly to prevent interpolation issues)
+    cdfxa = cdfxa + np.linspace(1e-14, 1e-10, Ne)
+    
+    # 6. Interpolation
+    # kind='linear' and fill_value="extrapolate" mimics MATLAB's 'linear', 'extrap'
+    interp_func = interp1d(cdfxa, xd, kind='linear', bounds_error=False, fill_value="extrapolate")
+    xa = interp_func(qf)
     
     return xa
 
@@ -641,7 +755,7 @@ def h_weighted_mat(Y, stride, w=3):
     
     # Row-by-row, add 1 to the positions specified by target_indices
     row_indices = np.arange(M)[:, np.newaxis]
-    np.add.at(W, (row_indices, target_indices), 1/(2*w + 1))
+    np.add.at(W, (row_indices, target_indices), 1)
     
     # 5. The single matrix operation applied to |Y|
     return W @ np.abs(Y)

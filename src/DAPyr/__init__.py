@@ -140,7 +140,7 @@ class Expt:
       
             #Create Model Truth
             xt = np.zeros((Nx, T))
-            xt[:,0], model_error = MODELS.model(xt_0, dt, 115, funcptr)
+            xt[:,0], model_error = MODELS.model(xt_0, dt, 100, funcptr)
 
             if model_error != 0:
                   warnings.warn('Model integration failed.')
@@ -174,7 +174,7 @@ class Expt:
             if self.getParam('split_l05_state'):
                   Y_small_perf = MODELS.deconstruct_Z_circulant(xt)[1]
                   Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.obsParams['small_win'])
-                  Y_small_sum = Y_small_sum_perf + OBS_ERRORS.sample_errors(Y_small_sum_perf, used_obs_err, {'mu': 0, 'sigma': 0.1}, rng)
+                  Y_small_sum = Y_small_sum_perf + OBS_ERRORS.sample_errors(Y_small_sum_perf, used_obs_err, {'mu': 0, 'sigma': 0.01}, rng)
                   Y_small_sum = np.where(Y_small_sum >= 0, Y_small_sum , 0)
                   Y_small_sum = Y_small_sum.reshape(Y_perf.shape)
 
@@ -356,6 +356,7 @@ class Expt:
             self.obsParams['alpha'] = 0.0
             self.obsParams['debug_nle_noda'] = False
             self.obsParams['split_l05_state'] = False
+            self.obsParams['train_large_scale'] = False
 
             #Parameters related to observation quality control
             self.obsParams['qc_flag'] = 0
@@ -1110,6 +1111,7 @@ def runDA(expt: Expt, maxT : int = None):
                   raise ValueError('maxT greater than T in experiment ({} > {})'.format(maxT, T))
             T = maxT
 
+
       numPool = expt.getParam('numPool')
       #Observation Parameters
       H = expt.getParam('H')
@@ -1143,6 +1145,19 @@ def runDA(expt: Expt, maxT : int = None):
       train_frac = expt.getParam('train_frac')
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
       alpha = expt.getParam('alpha')
+
+      pabfile = np.load('pabdata-1000-0.2.npz')
+      pyx = pabfile['pab']
+      evec_x = pabfile['evx']
+      evec_y = pabfile['evy']
+      eval_x = pabfile['elx']
+      eval_y = pabfile['ely']
+      a_train_x = pabfile['atx']
+      a_train_y = pabfile['aty']
+      bwx = pabfile['bwx']
+      bwy = pabfile['bwy']
+      xtn = pabfile['xtn']
+      ytn = pabfile['ytn']
 
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
@@ -1308,7 +1323,7 @@ def runDA(expt: Expt, maxT : int = None):
                   case 0: #Deterministic EnKF
                         xa, e_flag = DA.EnSRF_update(xf, hx, xm ,hxm, Y[:, t], C, HC, var_y, gamma, e_flag, qaqcpass)
                   case 1: #LPF
-                        xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                        xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L, wc=100)
                   case 2: # Nothing
                         xa = xf
                   case 3: # LPF using kernel embeddings
@@ -1330,7 +1345,10 @@ def runDA(expt: Expt, maxT : int = None):
                                     # 4: p(y|xt)
                                     # 5: p(y|xa)
                                     if nle_type == 2 or nle_type == 4:
-                                          x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
+                                          if expt.getParam('train_large_scale'):
+                                                x_train[:Ns,ts+s-1] = Htemp @ MODELS.deconstruct_Z_circulant(xt)[0][:,t]
+                                          else:
+                                                x_train[:Ns,ts+s-1] = Htemp @ xt[:,t]
                                     elif nle_type == 3 or nle_type == 5:
                                           choose_mem = rng.integers(0,Ne)
                                           random_member = xa[:,choose_mem]
@@ -1363,11 +1381,18 @@ def runDA(expt: Expt, maxT : int = None):
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
 
                               if (t - T_train) % nle_every == 0:
+
                               
+                                    pab = pyx
+                                    x_map = evec_x, eval_x, a_train_x, bwx
+                                    y_map = evec_y, eval_y, a_train_y, bwy
+                                    
+                                    x_train = xtn
+                                    y_train = ytn
+                                    keep_rows = np.arange(len(y_train.flatten()))
 
-
-                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
-                                    pab += 1e-40
+                                    # pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
+                                    # pab += 1e-40
 
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
@@ -1380,9 +1405,12 @@ def runDA(expt: Expt, maxT : int = None):
                               evec_x, eval_x, a_train_x, bwx = x_map
                               evec_y, eval_y, a_train_y, bwy = y_map
 
+
                               
                               x_emb = (evec_x * eval_x).T
                               y_emb = (evec_y * eval_y).T
+
+                              # np.savez('multivar_emb_large.npz', x_emb = x_emb, y_emb = y_emb, x_train=x_train, y_train=y_train, evec_x = evec_x, eval_x = eval_x, evec_y = evec_y, eval_y = eval_y, bwx=bwx, bwy=bwy, a_train_x=a_train_x, a_train_y=a_train_y)
 
                               wo = np.zeros((Ny, Ne))
 
@@ -1517,6 +1545,7 @@ def runDA(expt: Expt, maxT : int = None):
                   countSV+=1                  
             xma = np.mean(xa, axis = -1)
             rmse[t] = np.sqrt(np.mean((xt[:, t] - xma)**2))
+            print(f'RMSE at time {t}: {rmse[t]}')
             spread[t, 1] = np.sqrt(np.mean(np.sum((xa - xma[:, np.newaxis])**2, axis = -1)/(Ne - 1)))
 
             #Model integrate forward
