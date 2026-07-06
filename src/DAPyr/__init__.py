@@ -155,6 +155,7 @@ class Expt:
             #Synthetic Observations
             used_obs_err = self.getParam('used_obs_err')
             used_obs_err_params = self.getParam('used_obs_err_params')
+            anchor_obs = self.getParam('anchor_obs')
 
             match h_flag:
                   case 0:
@@ -169,6 +170,10 @@ class Expt:
                         Y_perf = Y_small_sum_perf[:, :, np.newaxis]
                   case _:
                         raise ValueError(f'Invalid Option Selected for Measurement Operator h: {h_flag}')
+
+            if anchor_obs:
+                  Y_anchor_perf = np.matmul(H,xt)[:, :, np.newaxis]
+                  Y_anchor +=+ OBS_ERRORS.sample_errors(Y_anchor_perf, 0, {'mu': 0, 'sigma': 0.5}, rng)
 
 
             if self.getParam('split_l05_state'):
@@ -190,6 +195,8 @@ class Expt:
 
             if self.getParam('split_l05_state'):
                   return xf_0, xt, Y, Y_small_sum
+            elif anchor_obs:
+                  return xf_0, xt, Y, Y_anchor
             else:
                   return xf_0, xt, Y
 
@@ -261,6 +268,14 @@ class Expt:
                   self.states['xt'] = xt
                   self.states['Y'] = Y
                   self.states['Y_small_sum'] = Y_small_sum
+
+            if self.getParam('anchor_obs'):
+                  xf_0, xt, Y, Y_anchor = self._spinup(Nx, Ne, dt, T, tau, self.getParam('funcptr'), self.getParam('NumPool'), self.getParam('sig_y'), h_flag, H)
+
+                  self.states['xf_0'] = xf_0
+                  self.states['xt'] = xt
+                  self.states['Y'] = Y
+                  self.states['Y_anchor'] = Y_anchor
 
             else:
                   xf_0, xt, Y = self._spinup(Nx, Ne, dt, T, tau, self.getParam('funcptr'), self.getParam('NumPool'), self.getParam('sig_y'), h_flag, H)
@@ -356,6 +371,7 @@ class Expt:
             self.obsParams['alpha'] = 0.0
             self.obsParams['debug_nle_noda'] = False
             self.obsParams['split_l05_state'] = False
+            self.obsParams['anchor_obs'] = False
             self.obsParams['train_large_scale'] = False
 
             #Parameters related to observation quality control
@@ -380,6 +396,8 @@ class Expt:
             self.miscParams['saveEnsMean'] = 1
             self.miscParams['saveForecastEns'] = 0
             self.miscParams['save_keest_pab'] = 0
+
+            self.miscParams['log_every'] = 100
 
 
             #Default Singular Vector Parameters
@@ -1128,7 +1146,6 @@ def runDA(expt: Expt, maxT : int = None):
       small_win = expt.getParam('small_win')
       prescribed_obs_err = expt.getParam('prescribed_obs_err')
       prescribed_obs_err_params = expt.getParam('prescribed_obs_err_params')
-      force_hx_identity = expt.getParam('force_hx_identity')
 
       # Nonparametric Likelihood Estimation Parameters
       nle_type = expt.getParam('nle_type')
@@ -1146,22 +1163,36 @@ def runDA(expt: Expt, maxT : int = None):
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
       alpha = expt.getParam('alpha')
 
-      pabfile = np.load('pabdata-1000-0.2.npz')
-      pyx = pabfile['pab']
-      evec_x = pabfile['evx']
-      evec_y = pabfile['evy']
-      eval_x = pabfile['elx']
-      eval_y = pabfile['ely']
-      a_train_x = pabfile['atx']
-      a_train_y = pabfile['aty']
-      bwx = pabfile['bwx']
-      bwy = pabfile['bwy']
-      xtn = pabfile['xtn']
-      ytn = pabfile['ytn']
+      # pabfile = np.load('pabdata-1000-knn0.2-ns49.npz')
+
+      rnga = np.random.default_rng(1)
+      kecd_inds = rnga.choice(48000, size=9600, replace=False)
+
+      # print(f'starting to read file {pabfile}')
+      # pyx = pabfile['pab'][np.ix_(kecd_inds, kecd_inds)]
+      # evec_x = pabfile['evx'][kecd_inds]
+      # evec_y = pabfile['evy'][kecd_inds]
+      # eval_x = pabfile['elx']
+      # eval_y = pabfile['ely']
+      # a_train_x = pabfile['atx'][kecd_inds]
+      # a_train_y = pabfile['aty'][kecd_inds]
+      # bwx = pabfile['bwx']
+      # bwy = pabfile['bwy']
+      # xtn = pabfile['xtn'][:, kecd_inds]
+      # ytn = pabfile['ytn'][:, kecd_inds]
+      # keep_rows = np.arange(len(ytn.flatten()))
+
+      # pab = pyx + 1e-40
+      # x_map = evec_x, eval_x, a_train_x, bwx
+      # y_map = evec_y, eval_y, a_train_y, bwy
+
+      # print(f'done reading in file {pabfile}')
+
 
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')
       qc_flag = expt.getParam('qc_flag')
+      log_every = expt.getParam('log_every')
 
       #Model Parameters
       params, funcptr = expt.getParam('model_params'), expt.getParam('funcptr')
@@ -1260,6 +1291,8 @@ def runDA(expt: Expt, maxT : int = None):
       xf_0, xt, Y = expt.getStates()
       if expt.getParam('split_l05_state'):
             Y_small_sum = expt.getParam('Y_small_sum')
+      if expt.getParam('anchor_obs'):
+            Y_small_sum = expt.getParam('Y_anchor')
       xf = copy.deepcopy(xf_0)
 
       # Retrieve likelihood function (for use with LPF only)
@@ -1268,30 +1301,14 @@ def runDA(expt: Expt, maxT : int = None):
       for t in range(T):
 
 
-            if t % 20 == 0:
-                  print(f'DB: Starting cycle {t}')
-
-
             #Observation
             xm = np.mean(xf, axis = -1)[:, np.newaxis]
             rmse_prior[t] = np.sqrt(np.mean((xt[:, t] - xm[:, 0])**2))
             spread[t, 0] = np.sqrt(np.mean(np.sum((xf - xm)**2, axis = -1)/(Ne - 1)))
             if saveForecastEns:
                   x_fore_ens[:, :, t] = xf
-            if force_hx_identity:
-                  if expt_flag == 1:
-                        hx = np.matmul(H, xf)
-                  elif t < T_train and expt_flag == 3:
-                        hx = np.matmul(H, xf)
-                  else:
-                        match h_flag:
-                              case 0:
-                                    hx = np.matmul(H, xf)
-                              case 1:
-                                    hx = np.matmul(H, np.square(xf))
-                              case 2:
-                                    hx = np.matmul(H, np.log(np.abs(xf)))
-                        
+            if expt.getParam('anchor_obs') and t < T_train:
+                  hx = np.matmul(H, xf)
             else:
                   match h_flag:
                         case 0:
@@ -1331,7 +1348,10 @@ def runDA(expt: Expt, maxT : int = None):
                               if debug_nle_noDA:
                                     xa = xf
                               else:
-                                    xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                                    if expt.getParam('anchor_obs'):
+                                          xa, e_flag = DA.lpf_update(xf, hx, Y_anchor[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
+                                    else:
+                                          xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L)
                               ts = t * Ny // tof
                               te = ts + Ny // tof
                               s = 0 # sample # from this cycle
@@ -1353,7 +1373,6 @@ def runDA(expt: Expt, maxT : int = None):
                                           choose_mem = rng.integers(0,Ne)
                                           random_member = xa[:,choose_mem]
                                           x_train[:Ns,ts+s-1] = Htemp @ random_member
-                                          
                                           
 
                               if expt.getParam('split_l05_state'):
@@ -1377,52 +1396,70 @@ def runDA(expt: Expt, maxT : int = None):
                                       Htemp = np.squeeze(Hi[k, :, :])  # Equivalent to squeeze(Hi(k,:,:))
                                       if Ns == 1:
                                           Htemp = Htemp.T  # Transpose if Ns == 1
-                                      hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
+
+                                      if expt.getParam('train_large_scale'):
+                                            hxb_nbrs[:, n, k ]= Htemp @ MODELS.deconstruct_Z_circulant(xf)[0][:, n]
+                                      else:
+                                            hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
+
+                              # if t == 200 or t == 400 or t == 500:
+                              #       np.save(f'hxbnbrs_t{t}.npy', hxb_nbrs)
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
+                              
 
                               if (t - T_train) % nle_every == 0:
 
-                              
-                                    pab = pyx
-                                    x_map = evec_x, eval_x, a_train_x, bwx
-                                    y_map = evec_y, eval_y, a_train_y, bwy
+                                    # x_tr_last_e = xtn.copy()
+                                    # y_tr_last_e = ytn.copy()
                                     
-                                    x_train = xtn
-                                    y_train = ytn
-                                    keep_rows = np.arange(len(y_train.flatten()))
+                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
+                                    pab += 1e-40
 
-                                    # pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
-                                    # pab += 1e-40
+
+                                    x_tr_last_e = x_train[:,keep_rows].copy()
+                                    y_tr_last_e = y_train[:,keep_rows].copy()
 
                                     if save_keest_pab != 0:
                                           expt.keest_pab = pab.copy()
-                                          expt.x_train = x_train[:,keep_rows].copy()
-                                          expt.y_train = y_train[:,keep_rows].copy()
+                                          expt.x_train = x_tr_last_e
+                                          expt.y_train = y_tr_last_e
 
                               # compute particle weights outside of particle filter
 
-                              Nxy = hxb_nbrs.shape[0]  # Equivalent to length(hx[:,0,0]) in MATLAB
-                              evec_x, eval_x, a_train_x, bwx = x_map
-                              evec_y, eval_y, a_train_y, bwy = y_map
+                                    Nxy = hxb_nbrs.shape[0]  # Equivalent to length(hx[:,0,0]) in MATLAB
+                                    evec_x, eval_x, a_train_x, bwx = x_map
+                                    evec_y, eval_y, a_train_y, bwy = y_map
 
+                                    # np.savez('mapfile',
+                                    #          x_train=x_tr_last_e,
+                                    #          y_train=y_tr_last_e,
+                                    #          evec_x=evec_x,
+                                    #          evec_y=evec_y,
+                                    #          eval_x=eval_x,
+                                    #          eval_y=eval_y,
+                                    #          a_train_x=a_train_x,
+                                    #          a_train_y=a_train_y,
+                                    #          bwx=bwx,
+                                    #          bwy=bwy,
+                                    #          knn=knn,
+                                    #          cov_embedding=cov_embedding)
 
-                              
-                              x_emb = (evec_x * eval_x).T
-                              y_emb = (evec_y * eval_y).T
+                                    x_emb = (evec_x * eval_x).T
+                                    y_emb = (evec_y * eval_y).T
 
-                              # np.savez('multivar_emb_large.npz', x_emb = x_emb, y_emb = y_emb, x_train=x_train, y_train=y_train, evec_x = evec_x, eval_x = eval_x, evec_y = evec_y, eval_y = eval_y, bwx=bwx, bwy=bwy, a_train_x=a_train_x, a_train_y=a_train_y)
+                                    a_train_x = np.asarray(a_train_x).squeeze()
+                                    a_train_y = np.asarray(a_train_y).squeeze()
 
                               wo = np.zeros((Ny, Ne))
 
-                              a_train_x = np.asarray(a_train_x).squeeze()
-                              a_train_y = np.asarray(a_train_y).squeeze()
+                              print(f'looking up particle weights at time {t}')
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
                                           if expt.getParam('split_l05_state'):
-                                                obs_emb = MISC.diff_map_ext_nystrom(Y_small_sum[k,t,:].T,y_train[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                                obs_emb = MISC.diff_map_ext_nystrom(Y_small_sum[k,t,:].T,y_tr_last_e[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           else:
-                                                obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_train[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
+                                                obs_emb = MISC.diff_map_ext_nystrom(Y[k,t,:].T,y_tr_last_e[:,keep_rows].T,evec_y,eval_y,a_train_y,bwy,knn,1);
                                           obs_emb *= eval_y
                                           ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                     for n in range(Ne):
@@ -1430,7 +1467,7 @@ def runDA(expt: Expt, maxT : int = None):
                                                 obs_emb = MISC.diff_map_ext_nystrom(
                                     # y_train[ts:te] = Y[t,0::tof]
                                                       (Y[k,t,:] - hxb_nbrs[(Nxy - 1) // 2, k, n]).T,
-                                                      y_train[:,keep_rows].T,
+                                                      y_tr_last_e[:,keep_rows].T,
                                                       evec_y,
                                                       eval_y,
                                                       a_train_y,
@@ -1441,9 +1478,10 @@ def runDA(expt: Expt, maxT : int = None):
                                                 obs_emb *= eval_y  # Element-wise multiplication along columns
                                                 ind2 = np.argmin(np.sum((obs_emb.T - y_emb) ** 2, axis=0))
                                           # Find nearest state on manifold
+
                                           state_emb = MISC.diff_map_ext_nystrom(
                                                 hxb_nbrs[:, k, n].reshape(1, -1),
-                                                x_train[:,keep_rows].T,
+                                                x_tr_last_e[:,keep_rows].T,
                                                 evec_x,
                                                 eval_x,
                                                 a_train_x,
@@ -1458,6 +1496,7 @@ def runDA(expt: Expt, maxT : int = None):
                               # sum of normalized likelihoods for a given observation equals one
                                     wo[k, :] /= np.sum(wo[k, :])
 
+                              print(f'done looking up particle weights at time {t}')
 
                               
                               if debug_nle_noDA:
@@ -1545,7 +1584,8 @@ def runDA(expt: Expt, maxT : int = None):
                   countSV+=1                  
             xma = np.mean(xa, axis = -1)
             rmse[t] = np.sqrt(np.mean((xt[:, t] - xma)**2))
-            print(f'RMSE at time {t}: {rmse[t]}')
+            if t % log_every == 0:
+                  print(f'DB: RMSE at time {t}: {rmse[t]}')
             spread[t, 1] = np.sqrt(np.mean(np.sum((xa - xma[:, np.newaxis])**2, axis = -1)/(Ne - 1)))
 
             #Model integrate forward

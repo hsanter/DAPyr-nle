@@ -525,30 +525,19 @@ def _pf_merge(x, xs, loc, Ne, xmpf, var_a):
     xs = xs - xmpf
     x = x - xmpf
 
-    # r1[..., None] is safer than r1[:, None]. It ensures the new axis 
-    # is always added to the very end, ensuring correct broadcasting 
-    # regardless of whether loc/r1 is 1D or 2D.
     xa = xmpf + r1[..., None] * xs + r2[..., None] * x
-# keepdims=True eliminates the need for the IF/ELSE block entirely
     pfm = np.sum(xa, axis=-1, keepdims=True) / Ne
     pfv = np.sum((xa - pfm)**2, axis=-1, keepdims=True) / (Ne - 1)
     
-    # --- NEW FIX ---
-    # If var_a is a covariance matrix (e.g., 17, 48, 48), extract the diagonal variances
     if np.ndim(var_a) >= 2 and var_a.shape[-1] == var_a.shape[-2]:
         var_a = np.diagonal(var_a, axis1=-2, axis2=-1)
         
-    # Ensure var_a has the trailing dimension (17, 48) -> (17, 48, 1)
     if np.ndim(var_a) < np.ndim(pfv):
         var_a = var_a[..., None]
-    # ---------------
-    
-    # Now both var_a and pfv are (17, 48, 1), so out_shape is strictly (17, 48, 1)
     out_shape = np.broadcast_shapes(np.shape(var_a), np.shape(pfv))
     
     ratio = np.divide(var_a, pfv, out=np.ones(out_shape, dtype=float), where=(pfv > 0))
     
-    # (17, 48, 80) * (17, 48, 1) broadcasts perfectly!
     xa = xmpf + (xa - pfm) * np.sqrt(ratio)
 
     return xa

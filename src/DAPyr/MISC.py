@@ -12,7 +12,9 @@ from scipy.special import logsumexp
 from sklearn.neighbors import NearestNeighbors
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsl
+from sklearn.utils.extmath import randomized_svd
 from pydiffmap import diffusion_map as dm
+import pickle
 
 import warnings
 
@@ -39,7 +41,7 @@ def create_periodic(sigma, m, dx):
       else: #Odd
             cx = np.floor(m/2)
             x = np.concatenate([np.arange(0, cx+1), np.arange(cx, 0, -1), np.arange(0, cx+1), np.arange(cx, 0, -1)])
-      wlc = np.exp(-((dx*(x))**2)/(2*sigma*2))
+      wlc = np.exp(-((dx*(x))**2)/(2*sigma**2))
       B = np.zeros((m, m))
       for i in range(m):
             B[i, :] = wlc[m - i:2*m - i]
@@ -532,8 +534,8 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
 
     data_keep = scaled_data[keep_rows].reshape((n_keep,Ns))
 
-    K = squareform(pdist(data_keep))
     if bw=='adaptive':
+          K = squareform(pdist(data_keep))
           print('starting before')
           bw, max_d = choose_optimal_epsilon_BGH(K ** 2)
           bw *= 2
@@ -558,7 +560,6 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
           print(f'knn is: {knn}, number of samples = {len(data_keep)}')
           print(f'using median distance without 0s: {median_offdiag}')
           bw = median_offdiag
-          print(bw)
 
     if bw=='adaptive':
           print('starting after')
@@ -568,43 +569,98 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     
     K.data = gaussian_k(dists.data, bw)
     Ksym = (K.T).maximum(K)
+    
+    ## HMS Testing
+    P = Ksym.tocsc()
+    
+    # Free up Ksym memory explicitly
+    del Ksym, K, dists 
 
-    # alpha normalization
-    q = np.array(K.sum(axis=1)).ravel()
+    # 2. ALPHA NORMALIZATION VECTOR
+    q = np.array(P.sum(axis=1)).ravel()  # P is symmetric, so row sum == K sum
     right_norm_vec = np.power(q, -alpha)
-    m = right_norm_vec.shape[0]
-    Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
-    K_rn = Ksym @ Dalpha
 
-    # row normalization
+    # 3. COMPUTE ROW SUMS WITHOUT BUILDING COPIES
+    # Mathematically, the row sums of (P @ Dalpha) is just P multiplied by the vector!
+    # This completely bypasses creating the "K_rn" sparse matrix.
+    row_sum_K_rn = P.dot(right_norm_vec)
+
+    # 4. COMPUTE FINAL IN-PLACE SCALING VECTORS
     if symmetric_row_normalize:
-        row_sum = K_rn.sum(axis=1).transpose()
-        inv_row_sum = np.power(row_sum, -0.5)
-        n = row_sum.shape[1]
-        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
-        P = Dalpha @ K_rn @ Dalpha
+        inv_row_sum = np.power(row_sum_K_rn, -0.5)
+        # Combine alpha and row normalization for the columns
+        left_scale = inv_row_sum
+        right_scale = right_norm_vec * inv_row_sum
     else:
-        row_sum = K_rn.sum(axis=1).transpose()
-        inv_row_sum = np.power(row_sum, -1)
-        n = row_sum.shape[1]
-        Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
-        P = Dalpha * K_rn
+        inv_row_sum = np.power(row_sum_K_rn, -1)
+        left_scale = inv_row_sum
+        right_scale = right_norm_vec
+
+    # 5. APPLY SCALING IN-PLACE DIRECTLY TO CSC DATA ARRAY
+    # For a CSC matrix:
+    # Left multiplication scales rows: multiply by left_scale[row_indices]
+    P.data *= left_scale[P.indices]
+    # Right multiplication scales columns: multiply by right_scale[column_indices]
+    P.data *= np.repeat(right_scale, np.diff(P.indptr))
+
+    # 6. SAFE IN-PLACE DIAGONAL BOOST
+    # Avoids P.setdiag() which alters the sparsity structure and triggers reallocations
+    P.data[P.indices == np.repeat(np.arange(P.shape[0]), np.diff(P.indptr))] += 1e-10
+
+    # print(f"Final matrix shape: {P.shape}")
+    # print(f"Actual data array memory: {P.data.nbytes / 1e6} MB")
+
+    #HMS orig
+    # # alpha normalization
+    # q = np.array(K.sum(axis=1)).ravel()
+    # right_norm_vec = np.power(q, -alpha)
+    # m = right_norm_vec.shape[0]
+    # Dalpha = sps.spdiags(right_norm_vec, 0, m, m)
+    # K_rn = Ksym @ Dalpha
+
+    # # row normalization
+    # if symmetric_row_normalize:
+    #     row_sum = K_rn.sum(axis=1).transpose()
+    #     inv_row_sum = np.power(row_sum, -0.5)
+    #     n = row_sum.shape[1]
+    #     Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+    #     P = Dalpha @ K_rn @ Dalpha
+    # else:
+    #     row_sum = K_rn.sum(axis=1).transpose()
+    #     inv_row_sum = np.power(row_sum, -1)
+    #     n = row_sum.shape[1]
+    #     Dalpha = sps.spdiags(inv_row_sum, 0, n, n)
+    #     P = Dalpha * K_rn
 
       
-    P = (P.T).maximum(P)  # Ensure symmetry
-    P.setdiag(P.diagonal() + 1e-10)
+    # P = (P.T).maximum(P)  # Ensure symmetry
+    # P.setdiag(P.diagonal() + 1e-10)
 
-    # evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+    # # evals, evecs = spsl.eigs(P, k=Neig+1, which='LR')
+
+    # print(P.shape)
+    # print(len(P.data))
+    # print(len(P.data)/P.shape[0]/P.shape[1])
 
 
     # Eigen decomposition
-    v0 = rng.uniform(0, 1, n)
-    try:
-        evals, evecs = eigsh(P, k=Neig + 1, which="LA", v0=v0)
-    except apnc as e:
-        evals = e.eigenvalues
-        evecs = e.eigenvectors
-        print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
+    #hms testing
+    evecs, evals, _ = randomized_svd(
+          P,
+          n_components=Neig+1,
+          n_iter=5,
+          random_state=58
+          )
+
+    #orig
+    # v0 = rng.uniform(0, 1, N)
+    # try:
+    #     evals, evecs = eigsh(P, k=Neig + 1, which="LA", v0=v0, ncv=200, tol=1e-8)
+    # except apnc as e:
+    #     evals = e.eigenvalues
+    #     evecs = e.eigenvectors
+    #     print(f'Only found {len(evals)} out of {Neig + 1} eigenvectors')
+
 
 
     # evals = np.real(evals)
@@ -662,6 +718,9 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       kde = gaussian_kde(a_cop.T, bw_method='scott')
       qa = kde(a_cop.T)
 
+      # with open('kde_model.pkl', 'wb') as file:
+      #     pickle.dump(kde, file)
+
       # Calculate kernel mean embeddings
       N, M1 = Va.shape
       N, M2 = Vb.shape
@@ -673,17 +732,45 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
       Cbb = (Vb.T @ Vb) / N
 
       # C = Cab @ inv(Cbb, overwrite_a=True)
+      # print('starting solve')
       C = solve(Cbb, Cab.T, assume_a='positive definite').T
-      Mu = (Vb @ C.T)
+      # print('ending solve')
       
+      # print('starting matops')
+      Mu = (Vb @ C.T)
+
+      ## hms testing
+      
+      filename = 'pab_matrix.dat'
+      pab = np.memmap(filename, dtype='float64', mode='w+', shape=(N, N))
+      
+      # 2. PROCESS AND STREAM IN CHUNKS
+      # We calculate 2,000 rows at a time. 
+      chunk_size = 2000
+      for start in range(0, N, chunk_size):
+          end = min(start + chunk_size, N)
+          
+          # Compute the matrix multiplication ONLY for this slice of rows
+          chunk = (Va[start:end, :] @ Mu.T) * qa[start:end, np.newaxis]
+          
+          # Clean up negative values in-place (the boolean mask is now tiny)
+          chunk[chunk < 0] = 0
+          
+          # Write this chunk directly to the file on disk
+          pab[start:end, :] = np.real(chunk)
+          
+      # 3. PUSH ALL BUFFERED DATA TO THE DISK
+      pab.flush()
+      # print(f"Successfully saved full matrix to {filename}")
       # Compute pab
       
-      pab = (Va @ Mu.T) * qa[:, np.newaxis]
-      # pab = (Va @ Mu.T) 
+      # pab = (Va @ Mu.T) * qa[:, np.newaxis]
+      # # pab = (Va @ Mu.T) 
       
-      # Remove imaginary and negative values
-      pab[pab < 0] = 0
-      pab = np.real(pab)
+      # # Remove imaginary and negative values
+      # pab[pab < 0] = 0
+      # pab = np.real(pab)
+      # print('ending matops')
 
       return pab, (Vb, Db, a_train_b, bwb), (Va, Da, a_train_a, bwa), keeps
 
