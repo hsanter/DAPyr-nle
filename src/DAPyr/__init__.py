@@ -1146,18 +1146,18 @@ def runDA(expt: Expt, maxT : int = None):
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
       alpha = expt.getParam('alpha')
 
-      pabfile = np.load('pabdata-1000-0.2.npz')
-      pyx = pabfile['pab']
-      evec_x = pabfile['evx']
-      evec_y = pabfile['evy']
-      eval_x = pabfile['elx']
-      eval_y = pabfile['ely']
-      a_train_x = pabfile['atx']
-      a_train_y = pabfile['aty']
-      bwx = pabfile['bwx']
-      bwy = pabfile['bwy']
-      xtn = pabfile['xtn']
-      ytn = pabfile['ytn']
+      # pabfile = np.load('pabdata-1000-0.2.npz')
+      # pyx = pabfile['pab']
+      # evec_x = pabfile['evx']
+      # evec_y = pabfile['evy']
+      # eval_x = pabfile['elx']
+      # eval_y = pabfile['ely']
+      # a_train_x = pabfile['atx']
+      # a_train_y = pabfile['aty']
+      # bwx = pabfile['bwx']
+      # bwy = pabfile['bwy']
+      # xtn = pabfile['xtn']
+      # ytn = pabfile['ytn']
 
       #Flags
       h_flag, expt_flag= expt.getParam('h_flag'), expt.getParam('expt_flag')

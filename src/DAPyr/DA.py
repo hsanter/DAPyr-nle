@@ -208,9 +208,9 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
             e_flag = 1
             return np.nan, e_flag
 
-        beta_y, res_y = MISC.get_reg2(Ny, Ne, HCH, wo, N_eff, res_y)
-        beta, res = MISC.get_reg2(Nx, Ne, C_pf, wo, N_eff, res)
-        wo_ind = np.where(1 < 0.99*Ne*np.sum(wo**2, axis = -1))[0]
+        beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y)
+        beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res)
+        wo_ind = np.where(1 < 0.98*Ne*np.sum(wo**2, axis = -1))[0]
         #Obs loop
         # for i in range(Ny):
         for i in wo_ind:
@@ -269,7 +269,7 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
             omega_y = omega_y/ omegas_y
             hxmpf =np.sum(omega_y*hxo, axis = -1)[:, None]
 
-            if (1 > 0.99*Ne*sum(wo[i, :]**2)):
+            if (1 > 0.98*Ne*sum(wo[i, :]**2)):
                 continue
 
 
