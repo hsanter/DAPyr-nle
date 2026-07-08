@@ -226,7 +226,7 @@ def lpf_update(x : np.ndarray, hx : np.ndarray,
 
             # dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
 
-            val = C[:, None] * wt[None, :] + 1
+            val = C[:, None] * wt[None, :] + 1 + epsilon
             dum = np.log(val)
 
 
@@ -347,9 +347,9 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
             e_flag = 1
             return np.nan, e_flag
 
-      beta_y, res_y = MISC.get_reg(Ny, Ne, HCH, wo, N_eff, res_y)
-      beta, res = MISC.get_reg(Nx, Ne, C_pf, wo, N_eff, res)
-      wo_ind = np.where(1 < 0.98*Ne*np.sum(wo**2, axis = -1))[0]
+      beta_y, res_y = MISC.get_reg2(Ny, Ne, HCH, wo, N_eff, res_y)
+      beta, res = MISC.get_reg2(Nx, Ne, C_pf, wo, N_eff, res)
+      wo_ind = np.where(1 < 0.99*Ne*np.sum(wo**2, axis = -1))[0]
 
       #Obs loop
       for i in wo_ind:
@@ -365,7 +365,7 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
 
             # dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
 
-            val = C[:, None] * wt[None, :] + 1
+            val = C[:, None] * wt[None, :] + 1 + epsilon
             dum = np.log(val)
 
             
@@ -385,7 +385,7 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
 
             # dum[C!= 1.0, :] = np.log(np.matmul(C[C!=1.0][:, None], wt[None, :]) + 1 + epsilon)
 
-            val = C[:, None] * wt[None, :] + 1
+            val = C[:, None] * wt[None, :] + 1 + epsilon
             dum = np.log(val)
 
             lomega_y[beta_ind, :] = lomega_y[beta_ind, :] - dum
@@ -408,7 +408,7 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
             omega_y = omega_y/ omegas_y
             hxmpf =np.sum(omega_y*hxo, axis = -1)[:, None]
 
-            if (1 > 0.98*Ne*sum(omega_y[i, :]**2)):
+            if (1 > 0.99*Ne*sum(omega_y[i, :]**2)):
                   continue
 
             var_a = np.sum(omega*(xo - xmpf)**2, axis = -1)[:, None]
@@ -543,6 +543,77 @@ def _pf_merge(x, xs, loc, Ne, xmpf, var_a):
     return xa
     
 
+def lpf_update_keest_no_iter2(x : np.ndarray, hx : np.ndarray, 
+      Y : np.ndarray, 
+      H : np.ndarray, C_pf : np.ndarray, 
+      N_eff : float, wo: np.ndarray,
+      min_res : int,  
+      kddm_flag : int,  
+      e_flag : int, wc=100):
+    
+      Nx, Ne = x.shape
+      Ny = len(Y)
+      epsilon=1e-300
+      beta = np.ones((Nx,))
+      res = np.ones(beta.shape)
+      res = res- min_res
+      hx = hx.squeeze()
+      hxo = copy.deepcopy(hx)
+      xo = x.copy()
+
+      omega = np.ones((Nx, Ne))*(1/Ne) #Nx x Ne
+      lomega = np.zeros_like(omega)
+
+      if np.any(np.isnan(wo)):
+            e_flag = 1
+            return np.nan, e_flag
+
+      beta, res = MISC.get_reg2(Nx, Ne, C_pf, wo, N_eff, res)
+      wo_ind = np.where(1 < 0.99*Ne*np.sum(wo**2, axis = -1))[0]
+
+      #Obs loop
+      for i in wo_ind:
+
+            beta_ind = np.where(beta != 0)[0]
+            wt = Ne*wo[i, :] - 1 #Ne Array
+            C = C_pf[i, beta_ind] #Nxb array
+
+            dum = np.zeros((len(beta_ind), Ne))
+
+            val = C[:, None] * wt[None, :] + 1 + epsilon
+            dum = np.log(val)
+
+            lomega[beta_ind, :] = lomega[beta_ind, :] - dum
+            lomega[beta_ind, :] = lomega[beta_ind, :] - np.min(lomega[beta_ind, :], axis = -1)[:, None]
+            lomega[beta_ind, :] = np.clip(lomega[beta_ind, :], None, wc)
+
+            #Normalize
+            #lomega is Nx x Ne
+            #omega needs to be Nx x Ne
+
+            omega = np.exp(-lomega * beta[:, None])
+            omegas = np.sum(omega, axis = -1)[:, None]
+            omega = omega/omegas
+            xmpf = np.sum(omega*xo, axis = -1)[:, None]
+            var_a = np.sum(omega*(xo - xmpf)**2, axis = -1)[:, None]
+            norm = (1 - np.sum(omega**2, axis = -1))[:, None]
+            var_a = var_a/norm
+            #ks = np.random.choice(Ne, Ne, p = omega_y[i, :], replace=True)
+            if 2 == 3:
+                ks = MISC.sampling(hxo[:,i, :], wo[i, :], Ne)
+            else:
+                ks = MISC.sampling(hxo[i, :], wo[i, :], Ne)
+            x = _pf_merge(x, xo[:, ks], C_pf[i, :] * beta, Ne, xmpf, var_a)
+
+      if kddm_flag == 1:
+            for j in range(Nx):
+                  if np.var(x[j, :], ddof=1) > 0:
+                        x[j, :] = MISC.kddm(x[j, :], xo[j, :], omega[j, :])
+
+            xmpf = np.mean(x, axis=1)
+
+      max_res = np.max(res)
+      return x, e_flag
 
 
 

@@ -173,7 +173,7 @@ class Expt:
 
             if anchor_obs:
                   Y_anchor_perf = np.matmul(H,xt)[:, :, np.newaxis]
-                  Y_anchor +=+ OBS_ERRORS.sample_errors(Y_anchor_perf, 0, {'mu': 0, 'sigma': 0.5}, rng)
+                  Y_anchor = Y_anchor_perf + OBS_ERRORS.sample_errors(Y_anchor_perf, 0, {'mu': 0, 'sigma': 0.5}, rng)
 
 
             if self.getParam('split_l05_state'):
@@ -269,7 +269,7 @@ class Expt:
                   self.states['Y'] = Y
                   self.states['Y_small_sum'] = Y_small_sum
 
-            if self.getParam('anchor_obs'):
+            elif self.getParam('anchor_obs'):
                   xf_0, xt, Y, Y_anchor = self._spinup(Nx, Ne, dt, T, tau, self.getParam('funcptr'), self.getParam('NumPool'), self.getParam('sig_y'), h_flag, H)
 
                   self.states['xf_0'] = xf_0
@@ -334,7 +334,7 @@ class Expt:
             self.obsParams['obb'] = 0   #Observation buffer: number of variables to skip when generating obs
             #Localization
             self.obsParams['localize'] = 1
-            self.obsParams['roi'] = 0.005
+            self.obsParams['roi'] = 0.1
             #EnKF Parameters
             self.obsParams['inflation'] = 1
             self.obsParams['inf_flag'] = 0 #What Inflation Method to choose
@@ -1309,6 +1309,7 @@ def runDA(expt: Expt, maxT : int = None):
                   x_fore_ens[:, :, t] = xf
             if expt.getParam('anchor_obs') and t < T_train:
                   hx = np.matmul(H, xf)
+                  Y_anchor = expt.getParam('Y_anchor') 
             else:
                   match h_flag:
                         case 0:
@@ -1340,7 +1341,10 @@ def runDA(expt: Expt, maxT : int = None):
                   case 0: #Deterministic EnKF
                         xa, e_flag = DA.EnSRF_update(xf, hx, xm ,hxm, Y[:, t], C, HC, var_y, gamma, e_flag, qaqcpass)
                   case 1: #LPF
-                        xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L, wc=100)
+                        if expt.getParam('anchor_obs') and t < T_train:
+                              xa, e_flag = DA.lpf_update(xf, hx, Y_anchor[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L, wc=100)
+                        else:
+                              xa, e_flag = DA.lpf_update(xf, hx, Y[:, t], H, C, Nt_eff*Ne, min_res, maxiter, kddm_flag, e_flag, qaqcpass, L, wc=100)
                   case 2: # Nothing
                         xa = xf
                   case 3: # LPF using kernel embeddings
@@ -1402,8 +1406,8 @@ def runDA(expt: Expt, maxT : int = None):
                                       else:
                                             hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
 
-                              # if t == 200 or t == 400 or t == 500:
-                              #       np.save(f'hxbnbrs_t{t}.npy', hxb_nbrs)
+                              if t == 200 or t == 400 or t == 500:
+                                    np.save(f'hxbnbrs_t{t}.npy', hxb_nbrs)
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
                               
 
@@ -1452,7 +1456,6 @@ def runDA(expt: Expt, maxT : int = None):
 
                               wo = np.zeros((Ny, Ne))
 
-                              print(f'looking up particle weights at time {t}')
 
                               for k in range(Ny):
                                     if nle_type >= 4 :
@@ -1495,8 +1498,6 @@ def runDA(expt: Expt, maxT : int = None):
 
                               # sum of normalized likelihoods for a given observation equals one
                                     wo[k, :] /= np.sum(wo[k, :])
-
-                              print(f'done looking up particle weights at time {t}')
 
                               
                               if debug_nle_noDA:
