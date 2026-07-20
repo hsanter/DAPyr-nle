@@ -202,9 +202,9 @@ def get_reg2(Nx, Ne, C, hw, Neff, res, wc=100):
 def sampling(x, w, Ne):
 
     # Sort sample
-    # b = np.argsort(x)
+    b = np.argsort(x)
     # i replaced the above w the below when trying to get this to work with Nb > 0. was that necessary?
-    b = np.arange(len(w))
+    # b = np.arange(len(w))
     
     # Apply deterministic sampling by taking value at every 1/Ne quantile
     cum_weight = np.concatenate(([0], np.cumsum(w[b])))
@@ -842,7 +842,8 @@ def h_weighted_mat(Y, stride, w=3):
     
     # Row-by-row, add 1 to the positions specified by target_indices
     row_indices = np.arange(M)[:, np.newaxis]
-    np.add.at(W, (row_indices, target_indices), 1)
+    np.add.at(W, (row_indices, target_indices), 1/(2*w+1))
+    # np.add.at(W, (row_indices, target_indices), 1)
     
     # 5. The single matrix operation applied to |Y|
     return W @ np.abs(Y)

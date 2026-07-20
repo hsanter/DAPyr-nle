@@ -422,7 +422,7 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
             var_a_y = var_a_y/norm
             #ks = np.random.choice(Ne, Ne, p = omega_y[i, :], replace=True)
             if len(hxmpf.shape) == 3:
-                ks = MISC.sampling(hxo[:,i, :], wo[i, :], Ne)
+                ks = MISC.sampling(np.arange(len(wo[i, :])), wo[i, :], Ne)
             else:
                 ks = MISC.sampling(hxo[i, :], wo[i, :], Ne)
             x = _pf_merge(x, xo[:, ks], C_pf[i, :] * beta, Ne, xmpf, var_a)
@@ -438,8 +438,8 @@ def lpf_update_keest_no_iter(x : np.ndarray, hx : np.ndarray,
 
             xmpf = np.mean(x, axis=1)
 
-            for j in range(Ny):
-                  hx[j, :] = MISC.kddm(hx[j, :], hxo[j, :], omega_y[j, :])
+            # for j in range(Ny):
+            #       hx[j, :] = MISC.kddm(hx[j, :], hxo[j, :], omega_y[j, :])
       max_res = np.max(res)
       return x, e_flag
 

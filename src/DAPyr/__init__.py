@@ -166,7 +166,7 @@ class Expt:
                         Y_perf = np.matmul(H, np.log(np.abs(xt)))[:, :, np.newaxis] 
                   case 3:
                         Y_small_perf = MODELS.deconstruct_Z_circulant(xt)[1]
-                        Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.obsParams['small_win'])
+                        Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.miscParams['small_win'])
                         Y_perf = Y_small_sum_perf[:, :, np.newaxis]
                   case _:
                         raise ValueError(f'Invalid Option Selected for Measurement Operator h: {h_flag}')
@@ -175,10 +175,9 @@ class Expt:
                   Y_anchor_perf = np.matmul(H,xt)[:, :, np.newaxis]
                   Y_anchor = Y_anchor_perf + OBS_ERRORS.sample_errors(Y_anchor_perf, 0, {'mu': 0, 'sigma': 0.5}, rng)
 
-
             if self.getParam('split_l05_state'):
                   Y_small_perf = MODELS.deconstruct_Z_circulant(xt)[1]
-                  Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.obsParams['small_win'])
+                  Y_small_sum_perf = MISC.h_weighted_mat(Y_small_perf, self.obsParams['obf'], self.miscParams['small_win'])
                   Y_small_sum = Y_small_sum_perf + OBS_ERRORS.sample_errors(Y_small_sum_perf, used_obs_err, {'mu': 0, 'sigma': 0.01}, rng)
                   Y_small_sum = np.where(Y_small_sum >= 0, Y_small_sum , 0)
                   Y_small_sum = Y_small_sum.reshape(Y_perf.shape)
@@ -191,6 +190,8 @@ class Expt:
             else:
             
                   Y = Y_perf + OBS_ERRORS.sample_errors(Y_perf, used_obs_err, used_obs_err_params, rng)
+                  if h_flag == 3:
+                        Y = np.where(Y >= 0, Y, 0)
 
 
             if self.getParam('split_l05_state'):
@@ -350,29 +351,28 @@ class Expt:
             default_gaussian_params = {'mu': 0, 'sigma' : 1}
             self.obsParams['used_obs_err'] = 0
             self.obsParams['used_obs_err_params'] = default_gaussian_params
-            self.obsParams['prescribed_obs_err'] = 0
-            self.obsParams['prescribed_obs_err_params'] = default_gaussian_params
+            self.miscParams['prescribed_obs_err'] = 0
+            self.miscParams['prescribed_obs_err_params'] = default_gaussian_params
 
             #Kernel Embeddings Likelihood Estimation Parameters
             # self.obsParams['do_keest'] = 0
-            self.obsParams['nle_type'] = 2
-            self.obsParams['nle_every'] = 1
-            self.obsParams['Neig'] = 30
-            self.obsParams['knn_frac'] = 0.05
-            self.obsParams['bw_dm'] = 0.05
-            self.obsParams['bw_kde'] = -999
-            self.obsParams['T_train'] = 50
-            self.obsParams['tof'] = 1
-            self.obsParams['Nl'] = 1
-            self.obsParams['small_win'] = 3
-            self.obsParams['Nb'] = 0
-            self.obsParams['klb'] = 0.0
-            self.obsParams['train_frac'] = 1.0
-            self.obsParams['alpha'] = 0.0
-            self.obsParams['debug_nle_noda'] = False
-            self.obsParams['split_l05_state'] = False
-            self.obsParams['anchor_obs'] = False
-            self.obsParams['train_large_scale'] = False
+            self.miscParams['nle_type'] = 2
+            self.miscParams['nle_every'] = 1
+            self.miscParams['Neig'] = 30
+            self.miscParams['knn_frac'] = 0.05
+            self.miscParams['bw_dm'] = 0.05
+            self.miscParams['T_train'] = 50
+            self.miscParams['tof'] = 1
+            self.miscParams['Nl'] = 1
+            self.miscParams['small_win'] = 3
+            self.miscParams['Nb'] = 0
+            self.miscParams['klb'] = 0.0
+            self.miscParams['train_frac'] = 1.0
+            self.miscParams['alpha'] = 0.0
+            self.miscParams['debug_nle_noda'] = False
+            self.miscParams['split_l05_state'] = False
+            self.miscParams['anchor_obs'] = False
+            self.miscParams['train_large_scale'] = False
 
             #Parameters related to observation quality control
             self.obsParams['qc_flag'] = 0
@@ -507,8 +507,8 @@ class Expt:
                   "      2: Lognormal (log(abs(x)))\n"
                   f"used_obs_err: {self.obsParams['used_obs_err']} # todo \n"
                   f"used_obs_err_params: {self.obsParams['used_obs_err_params']} #todo \n"
-                  f"prescribed_obs_err: {self.obsParams['prescribed_obs_err']} #todo \n"
-                  f"prescribed_obs_err_params: {self.obsParams['prescribed_obs_err_params']} #todo \n"
+                  f"prescribed_obs_err: {self.miscParams['prescribed_obs_err']} #todo \n"
+                  f"prescribed_obs_err_params: {self.miscParams['prescribed_obs_err_params']} #todo \n"
                   f"tau: {self.obsParams['tau']} # Number of model time steps between data assimilation cycles\n"
                   f"obb: {self.obsParams['obb']} # Observation buffer: number of variables to skip when generating obs\n"
                   f"obf: {self.obsParams['obf']} # Observation spatial frequency: spacing between variables\n"
@@ -555,7 +555,6 @@ class Expt:
                   f"knn_frac: {self.getParam('knn_frac')} # fraction of nearest neighbors to use for diff maps\n"
                   f"klb: {self.getParam('klb')} # \n"
                   f"bw_dm: {self.getParam('bw_dm')} # bandwidtch for diffusion maps kernel\n"
-                  f"bw_kde: {self.getParam('bw_kde')} # bandwidth to use for KDE estimate of p(y); sentinel flag means adaptive selection\n"
                   f"T_train: {self.getParam('T_train')} # number of time steps of data to train on\n"
                   f"tof: {self.getParam('tof')} # training on every tof obs at each time\n"
                   f"Nl: {self.getParam('Nl')} # dimension of observation vectors\n"
@@ -1153,7 +1152,6 @@ def runDA(expt: Expt, maxT : int = None):
       Neig = expt.getParam('Neig')
       knn_frac = expt.getParam('knn_frac')
       bw_dm = expt.getParam('bw_dm')
-      bw_kde = expt.getParam('bw_kde')
       T_train = expt.getParam('T_train')
       tof = expt.getParam('tof')
       Nl = expt.getParam('Nl')
@@ -1292,14 +1290,13 @@ def runDA(expt: Expt, maxT : int = None):
       if expt.getParam('split_l05_state'):
             Y_small_sum = expt.getParam('Y_small_sum')
       if expt.getParam('anchor_obs'):
-            Y_small_sum = expt.getParam('Y_anchor')
+            Y_anchor = expt.getParam('Y_anchor')
       xf = copy.deepcopy(xf_0)
 
       # Retrieve likelihood function (for use with LPF only)
       L = OBS_ERRORS.get_likelihood(prescribed_obs_err, prescribed_obs_err_params)
 
       for t in range(T):
-
 
             #Observation
             xm = np.mean(xf, axis = -1)[:, np.newaxis]
@@ -1320,10 +1317,7 @@ def runDA(expt: Expt, maxT : int = None):
                               hx = np.matmul(H, np.log(np.abs(xf)))
                         case 3:
                               hx = MODELS.deconstruct_Z_circulant(xf)[1]
-                              # print(xf.shape)
-                              # print(hx.shape)
                               hx = MISC.h_weighted_mat(hx, obf, small_win)
-                              # print(f'final shape: {hx.shape}')
 
 
             hxm = np.mean(hx, axis = -1)[:, None]
@@ -1406,8 +1400,8 @@ def runDA(expt: Expt, maxT : int = None):
                                       else:
                                             hxb_nbrs[:, n, k] = Htemp @ xf[:, n]  # Matrix-vector multiplication
 
-                              if t == 200 or t == 400 or t == 500:
-                                    np.save(f'hxbnbrs_t{t}.npy', hxb_nbrs)
+                              # if t == 200 or t == 400 or t == 500:
+                              #       np.save(f'hxbnbrs_t{t}.npy', hxb_nbrs)
                               hxb_nbrs = np.transpose(hxb_nbrs, [0,2,1])
                               
 
