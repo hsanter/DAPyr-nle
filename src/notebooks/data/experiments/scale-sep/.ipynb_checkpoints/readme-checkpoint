@@ -1,0 +1,11 @@
+intermediates as i'm working on getting small scale only assimilation working.
+
+6/23/26 - good looking experiments assimilating with the known forward operator for the small scale only, with a strongly coupled model (C=5).
+
+6/24/26 - see above, but with Jon's most recent updates to the LPF.
+
+6/27 - good enough looking experiments with the known forward operator for the small scale, with a weakly coupled model! for roi=0.015 and roi=0.02 (the 0.02 one is better!)
+
+7/9 - what should be final l05-noda and l05-true experiments. needing to use averages instead of sums visavis the observations, and also needing to make sure that deterministic sampling is happening with the sorted array.
+
+7/9 - psych i emptied this for the time being. once current version of scale-sep looks good those are the experiments that should get used.

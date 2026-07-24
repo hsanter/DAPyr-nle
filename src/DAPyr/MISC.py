@@ -676,7 +676,7 @@ def dmap_hms(data, Neig, knn, bw, Ns, alpha, train_frac=1.0, keep_rows=[], f_nor
     return evecs, evals, inv_row_sum, bw, data_keep, keep_rows
  
 
-def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
+def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0, use_kde=True):
 
 
       N = a.shape[0]
@@ -751,7 +751,11 @@ def rkhs_likelihood(a, b, Neig, knn, klb, bw, Ns, train_frac, alpha=0):
           end = min(start + chunk_size, N)
           
           # Compute the matrix multiplication ONLY for this slice of rows
-          chunk = (Va[start:end, :] @ Mu.T) * qa[start:end, np.newaxis]
+          if use_kde:
+                chunk = (Va[start:end, :] @ Mu.T) * qa[start:end, np.newaxis]
+          else:
+                chunk = (Va[start:end, :] @ Mu.T) 
+                
           
           # Clean up negative values in-place (the boolean mask is now tiny)
           chunk[chunk < 0] = 0

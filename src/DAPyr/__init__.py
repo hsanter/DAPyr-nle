@@ -368,6 +368,7 @@ class Expt:
             self.miscParams['Nb'] = 0
             self.miscParams['klb'] = 0.0
             self.miscParams['train_frac'] = 1.0
+            self.miscParams['use_kde'] = True
             self.miscParams['alpha'] = 0.0
             self.miscParams['debug_nle_noda'] = False
             self.miscParams['split_l05_state'] = False
@@ -1160,6 +1161,7 @@ def runDA(expt: Expt, maxT : int = None):
       train_frac = expt.getParam('train_frac')
       debug_nle_noDA = expt.getParam('debug_nle_noDA')
       alpha = expt.getParam('alpha')
+      use_kde = expt.getParam('use_kde')
 
       # pabfile = np.load('pabdata-1000-knn0.2-ns49.npz')
 
@@ -1410,7 +1412,7 @@ def runDA(expt: Expt, maxT : int = None):
                                     # x_tr_last_e = xtn.copy()
                                     # y_tr_last_e = ytn.copy()
                                     
-                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha)
+                                    pab, x_map, y_map, keep_rows = MISC.rkhs_likelihood(y_train.T, x_train.T, Neig, knn, klb, bw_dm, Ns, train_frac, alpha, use_kde)
                                     pab += 1e-40
 
 

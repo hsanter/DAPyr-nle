@@ -1,0 +1,17 @@
+/.DS_Store
+*.dat
+*.npz
+/pyrightconfig.json
+/src/notebooks/.DS_Store
+/src/notebooks/archive/.ipynb_checkpoints/
+/src/notebooks/.ipynb_checkpoints/
+/docs/build/
+/src/.DS_Store
+/src/.ipynb_checkpoints/
+/src/DAPyr/__pycache__/
+/src/notebooks/kde_model.pkl
+/src/notebooks/data/demo/
+/src/notebooks/data/.DS_Store
+/tests/__pycache__/
+/src/notebooks/archive/nlh_l96.ipynb
+*.expt
